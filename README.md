@@ -20,4 +20,4 @@ claude plugin install personal@personal-skills
 
 | Skill | Description |
 |-------|-------------|
-| <nobr>`/pr-desc`</nobr> | Generate a PR title and markdown description from the current branch's changes. Detects stacked PRs, diffs against the appropriate base, and writes the result to `/tmp/pr-description.md`. |
+| `/pr&#8209;desc` | Generate a PR title and markdown description from the current branch's changes. Detects stacked PRs, diffs against the appropriate base, and writes the result to `/tmp/pr-description.md`. |
