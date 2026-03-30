@@ -1,0 +1,12 @@
+{
+  "name": "personal-skills",
+  "owner": { "name": "Tom Boone" },
+  "metadata": { "description": "Personal Claude Code skills" },
+  "plugins": [
+    {
+      "name": "personal",
+      "source": "./plugins/personal",
+      "description": "Personal productivity skills"
+    }
+  ]
+}
