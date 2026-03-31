@@ -77,6 +77,16 @@ git diff <base>..HEAD
 
 Read all three outputs before generating anything.
 
+**Incorporate conversation and plan context:**
+
+Before generating the title and description, check for context from the current conversation that can inform the *why* and *motivation* behind the changes:
+
+- **Implementation plan**: If there is an active plan (from `superpowers:writing-plans`, `superpowers:executing-plans`, or similar), use the plan's goal, motivation, acceptance criteria, and relevant step descriptions to frame the Summary and Changes sections.
+- **Conversation history**: If the current session includes discussion about the problem being solved, the feature being added, or design decisions made, use that context for a more accurate and informative description.
+- **Task context**: If tasks were created during the session, reference task descriptions for additional context on purpose and scope.
+
+The diff shows *what* changed; conversation and plan context often better explain *why*. Use both.
+
 ### Step 3: Generate the Title
 
 Write a PR title:

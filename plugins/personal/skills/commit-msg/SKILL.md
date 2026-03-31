@@ -35,7 +35,17 @@ git status --porcelain
 
 If there is output (uncommitted changes exist), diff against `HEAD`. Otherwise diff against `HEAD~1`.
 
-### Step 2: Generate the Message
+### Step 2: Incorporate Conversation Context
+
+Before generating the message, check for context from the current conversation that can inform the *why* behind the changes:
+
+- **Implementation plan**: If there is an active plan (from `superpowers:writing-plans`, `superpowers:executing-plans`, or similar), note the goal, motivation, and relevant plan step being completed.
+- **Conversation history**: If the current session includes discussion about what problem is being solved, what feature is being added, or what bug is being fixed, use that intent to write a more accurate message.
+- **Task context**: If tasks were created during the session, reference the task descriptions for additional context on purpose.
+
+Use this context to capture the *why* — the diff alone often only shows the *what*.
+
+### Step 3: Generate the Message
 
 Write a single-line commit message:
 - Imperative mood ("Add", "Fix", "Update", not "Added", "Fixes", "Updates")
@@ -43,8 +53,9 @@ Write a single-line commit message:
 - No period at the end
 - Focus on *what* and *why*, not *how*
 - Conventional style (e.g., "Add user authentication endpoint", "Fix null check in payment handler")
+- If conversation/plan context provides a clearer *why* than the diff alone, prefer that framing
 
-### Step 3: Output
+### Step 4: Output
 
 Print the message as a code block so it's easy to copy:
 
