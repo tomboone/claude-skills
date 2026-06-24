@@ -117,5 +117,75 @@ class TestFormatSummary(unittest.TestCase):
         self.assertIn("no", out.lower())      # e.g. "no tickets processed"
 
 
+MODELS = {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "opus"}
+TIMEOUTS = {"implementit": 1800, "shipit": 600, "reviewit": 900}
+
+
+def make_runner(scripted):
+    """scripted: list of InvocationResult returned in order per call."""
+    calls = {"cmds": []}
+    seq = iter(scripted)
+    def runner(cmd, timeout):
+        calls["cmds"].append(cmd)
+        return next(seq)
+    runner.calls = calls
+    return runner
+
+
+class TestRunTicketPipeline(unittest.TestCase):
+    def test_all_steps_succeed(self):
+        runner = make_runner([
+            loop.InvocationResult(0, "implemented", False),
+            loop.InvocationResult(0, "PR https://github.com/o/r/pull/7", False),
+            loop.InvocationResult(0, "review done\nSTATUS: APPROVED", False),
+        ])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertTrue(r.implemented)
+        self.assertEqual(r.pr_url, "https://github.com/o/r/pull/7")
+        self.assertEqual(r.review_status, "APPROVED")
+        self.assertIsNone(r.failed_step)
+        self.assertEqual(len(runner.calls["cmds"]), 3)
+
+    def test_implement_failure_skips_rest(self):
+        runner = make_runner([loop.InvocationResult(1, "", False)])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertFalse(r.implemented)
+        self.assertEqual(r.failed_step, "implementit")
+        self.assertEqual(len(runner.calls["cmds"]), 1)   # ship/review never run
+
+    def test_ship_failure_skips_review(self):
+        runner = make_runner([
+            loop.InvocationResult(0, "implemented", False),
+            loop.InvocationResult(0, "no pr produced", False),
+        ])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertTrue(r.implemented)
+        self.assertIsNone(r.pr_url)
+        self.assertEqual(r.failed_step, "shipit")
+        self.assertEqual(len(runner.calls["cmds"]), 2)   # review never run
+
+    def test_changes_requested_is_not_a_failure(self):
+        runner = make_runner([
+            loop.InvocationResult(0, "implemented", False),
+            loop.InvocationResult(0, "PR https://github.com/o/r/pull/8", False),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+        ])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertIsNone(r.failed_step)
+        self.assertEqual(r.review_status, "CHANGES_REQUESTED")
+        self.assertEqual(r.pr_url, "https://github.com/o/r/pull/8")
+
+    def test_uses_correct_models(self):
+        runner = make_runner([
+            loop.InvocationResult(0, "x", False),
+            loop.InvocationResult(0, "https://github.com/o/r/pull/9", False),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+        ])
+        loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        cmds = runner.calls["cmds"]
+        self.assertEqual(cmds[0][cmds[0].index("--model") + 1], "sonnet")   # implementit
+        self.assertEqual(cmds[2][cmds[2].index("--model") + 1], "opus")     # reviewit
+
+
 if __name__ == "__main__":
     unittest.main()

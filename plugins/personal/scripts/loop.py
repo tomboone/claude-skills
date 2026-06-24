@@ -71,6 +71,28 @@ def classify_outcome(returncode, result_text, timed_out, step):
     return (True, "")
 
 
+def run_ticket_pipeline(ticket, runner, models, timeouts):
+    tid = ticket["id"]
+
+    res = runner(build_claude_cmd(f"/personal:implementit {tid}", models["implementit"]), timeouts["implementit"])
+    ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "implementit")
+    if not ok:
+        return TicketResult(tid, False, None, None, "implementit", reason)
+
+    res = runner(build_claude_cmd(f"/personal:shipit {tid}", models["shipit"]), timeouts["shipit"])
+    ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "shipit")
+    if not ok:
+        return TicketResult(tid, True, None, None, "shipit", reason)
+    pr_url = shipit_pr_url(res.result_text)
+
+    res = runner(build_claude_cmd(f"/personal:reviewit {tid}", models["reviewit"]), timeouts["reviewit"])
+    ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "reviewit")
+    if not ok:
+        return TicketResult(tid, True, pr_url, None, "reviewit", reason)
+
+    return TicketResult(tid, True, pr_url, parse_review_status(res.result_text), None, None)
+
+
 def format_summary(results, held):
     lines = ["", "=== Loop run summary ==="]
     if not results:
