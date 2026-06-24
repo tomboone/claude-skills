@@ -37,9 +37,9 @@ Only the base (`DOCS_DIR`) varies between projects — the `superpowers/specs` a
 - When a Linear ticket is associated, the filename **must** include the ticket ID so `/planit` and `/implementit` can find it.
 - Standard form: `<TICKET_ID>-<short-slug>.md` — e.g. `NEU-257-rss-ingestion.md`. Lowercase, hyphenated slug.
 - Locating a file = case-insensitive match on the filename containing the ticket ID.
-- **Milestone specs** are not ticket-scoped. Name them `specs/<project-slug>-m<NN>-<milestone-slug>.md`
+- **Milestone specs** are not ticket-scoped. Name them `DOCS_DIR/superpowers/specs/<project-slug>-m<NN>-<milestone-slug>.md`
   (`<project-slug>` = hyphenated Linear project name; `<NN>` = zero-padded milestone order).
-  Ticket plans reference their milestone spec by relative path (see `/projectit`).
+  Ticket plans reference their milestone spec via a `` **Milestone spec:** `` line with the relative path (see `/projectit`).
 
 ## Examples
 
