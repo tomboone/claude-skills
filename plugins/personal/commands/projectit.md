@@ -90,7 +90,7 @@ subagent with the user's feedback appended. Proceed to Phase 5 only on approval.
 ### Step 1 — Ensure labels exist
 
 Call `list_issue_labels` for the team. Check for the labels `user-story` and `loop-ready`. For each
-that is missing, call `create_issue_label(name=<label>, color="#6E56CF")` (Phase 3 applies `user-story` to stories; it is bootstrapped here too so a re-run against an existing project does not fail).
+that is missing, call `create_issue_label` with a distinct color per label: `user-story` → `color="#6E56CF"`, `loop-ready` → `color="#30A46C"`. (Phase 3 applies `user-story` to stories; it is bootstrapped here too so a re-run against an existing project does not fail.)
 (Dry-run: print each `create_issue_label` call instead of executing.)
 
 ### Step 2 — Update work-ticket descriptions and apply `loop-ready`
@@ -110,21 +110,19 @@ description prepends the following header block to the existing ticket descripti
 
 ```
 **Plan:** <relative plan path>
-**Milestone spec:** <relative milestone spec path>
+**Milestone spec (repo):** <relative milestone spec path>
 ```
 
-If the plan URL is available, also call
-`create_attachment(issueId=<ticket-id>, title="Implementation plan", url=<github-plan-url>)` to add
-the `links` attachment.
+If the plan URL is available (committed and pushed), include `links=[{url: <github-plan-url>, title: "Implementation plan"}]` in the same `save_issue` call (best-effort — omit the `links` param if the file is not yet in the remote).
 
 **Do not** set `status` on any issue — the GitHub↔Linear connector owns status transitions.
 
-(Dry-run: print each `save_issue` and `create_attachment` call instead of executing.)
+(Dry-run: print each `save_issue` call instead of executing.)
 
 ### Step 3 — Update milestone descriptions
 
 For each milestone, compute the relative path of its spec file (relative to `DOCS_DIR`). Call
-`save_milestone(id=<milestone-id>, description=<updated>)` where the updated description prepends:
+`save_milestone(project=PROJECT, id=<milestone-id>, description=<updated>)` where the updated description prepends:
 
 ```
 **Spec:** <relative spec path>

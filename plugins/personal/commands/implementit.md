@@ -37,7 +37,7 @@ Check out the branch from main (or the current release branch if one exists and 
 
 ## Step 5 — Hand off to Superpowers
 
-Invoke `superpowers:subagent-driven-development`, passing it the resolved plan file path as the plan to execute.
+Invoke `superpowers:subagent-driven-development`, passing the resolved plan file path (and the milestone spec loaded in Step 3, if any, as design context) as the plan to execute.
 
 Let Superpowers run its full subagent-driven execution from here — fresh subagent per task, two-stage review (spec compliance then code quality) after each task, final whole-branch review at the end.
 
