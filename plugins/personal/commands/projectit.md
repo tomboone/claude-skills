@@ -59,22 +59,26 @@ Run on Opus. Resolve `DOCS_DIR`. Two ordered rounds; batch subagents (≤5 at a 
 
 ### Round 1 — milestone specs (one subagent per milestone)
 Each subagent receives: the project description, the milestone goal, its stories+tickets, and the
-repo path (it explores actual code/conventions). It writes `specs/<project-slug>-m<NN>-<slug>.md`
+repo path (it explores actual code/conventions). It writes `DOCS_DIR/superpowers/specs/<project-slug>-m<NN>-<slug>.md`
 containing: purpose/scope of the phase; architecture & approach (components, data models, interfaces
 it introduces); cross-cutting decisions & constraints; milestone-level acceptance; explicit
-out-of-scope. It returns the path + a one-line summary. (Dry-run: write under `.dryrun/specs/`.)
+out-of-scope. It returns the path + a one-line summary. (Dry-run: write under `DOCS_DIR/superpowers/.dryrun/specs/`.)
 
 ### Round 2 — ticket plans (one subagent per work ticket, after Round 1)
+Complete all Round 1 subagents and confirm every milestone spec file is on disk before dispatching any Round 2 subagent.
+
 Each subagent receives: the ticket's milestone spec (now on disk), its story context, the ticket
 intent, the docs of its `blockedBy` prerequisites, and the repo path. It writes
-`plans/<TICKET-ID>-<slug>.md` — a RESILIENT plan: what to build, acceptance criteria, which part of
+`DOCS_DIR/superpowers/plans/<TICKET-ID>-<slug>.md` — a RESILIENT plan: what to build, acceptance criteria, which part of
 the milestone design it realizes, testing intent. Deliberately light on exact file/function
 signatures (those are filled in by `/implementit` against real code). It MUST start the file with:
 
     **Milestone spec:** <relative path from this plan to its milestone spec>
     **Depends on:** <TICKET-ID, …>   (omit if no blockers)
 
-(Dry-run: write under `.dryrun/plans/`.)
+The relative path resolves as `../specs/<project-slug>-m<NN>-<slug>.md` (since plans live in `plans/` and specs in `specs/`).
+
+It returns the path + a one-line summary. (Dry-run: write under `DOCS_DIR/superpowers/.dryrun/plans/`.)
 
 ### ■ Bulk review gate
 Present a table: milestone → spec path; ticket → plan path (grouped by story), each with its
