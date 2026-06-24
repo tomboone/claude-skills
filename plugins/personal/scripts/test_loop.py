@@ -45,5 +45,56 @@ class TestParseReviewStatus(unittest.TestCase):
         self.assertIsNone(loop.parse_review_status("no status line"))
 
 
+class TestBuildClaudeCmd(unittest.TestCase):
+    def test_includes_required_flags(self):
+        cmd = loop.build_claude_cmd("/personal:implementit A-1", "sonnet")
+        self.assertEqual(cmd[:3], ["claude", "-p", "/personal:implementit A-1"])
+        self.assertIn("--output-format", cmd)
+        self.assertIn("json", cmd)
+        self.assertIn("--permission-mode", cmd)
+        self.assertIn("bypassPermissions", cmd)
+        self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")
+
+    def test_excludes_forbidden_flags(self):
+        cmd = loop.build_claude_cmd("/personal:reviewit A-1", "opus")
+        self.assertNotIn("--resume", cmd)
+        self.assertNotIn("--bare", cmd)
+        self.assertNotIn("--max-turns", cmd)
+
+
+class TestShipitPrUrl(unittest.TestCase):
+    def test_finds_pr_url(self):
+        text = "Opened PR: https://github.com/tomboone/repo/pull/42 ready for review"
+        self.assertEqual(loop.shipit_pr_url(text), "https://github.com/tomboone/repo/pull/42")
+
+    def test_none_when_absent(self):
+        self.assertIsNone(loop.shipit_pr_url("no url"))
+
+
+class TestClassifyOutcome(unittest.TestCase):
+    def test_timeout_is_hard_fail(self):
+        ok, reason = loop.classify_outcome(0, "", True, "implementit")
+        self.assertFalse(ok)
+        self.assertIn("timed out", reason)
+
+    def test_nonzero_exit_is_hard_fail(self):
+        ok, reason = loop.classify_outcome(1, "", False, "implementit")
+        self.assertFalse(ok)
+        self.assertIn("exited 1", reason)
+
+    def test_shipit_without_pr_is_hard_fail(self):
+        ok, reason = loop.classify_outcome(0, "no pr here", False, "shipit")
+        self.assertFalse(ok)
+        self.assertIn("no PR", reason)
+
+    def test_shipit_with_pr_is_ok(self):
+        ok, _ = loop.classify_outcome(0, "https://github.com/o/r/pull/1", False, "shipit")
+        self.assertTrue(ok)
+
+    def test_implementit_zero_exit_is_ok(self):
+        ok, _ = loop.classify_outcome(0, "done", False, "implementit")
+        self.assertTrue(ok)
+
+
 if __name__ == "__main__":
     unittest.main()

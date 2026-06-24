@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Headless orchestrator: runs /implementit -> /shipit -> /reviewit per loop-ready ticket."""
 import json
+import re
 from collections import namedtuple
 
 InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out"])
@@ -41,3 +42,30 @@ def parse_review_status(result_text):
     if "STATUS: APPROVED" in (result_text or ""):
         return "APPROVED"
     return None
+
+
+_PR_RE = re.compile(r"https://github\.com/[^\s)]+/pull/\d+")
+
+
+def build_claude_cmd(prompt, model):
+    return [
+        "claude", "-p", prompt,
+        "--model", model,
+        "--output-format", "json",
+        "--permission-mode", "bypassPermissions",
+    ]
+
+
+def shipit_pr_url(result_text):
+    m = _PR_RE.search(result_text or "")
+    return m.group(0) if m else None
+
+
+def classify_outcome(returncode, result_text, timed_out, step):
+    if timed_out:
+        return (False, f"{step} timed out")
+    if returncode != 0:
+        return (False, f"{step} exited {returncode}")
+    if step == "shipit" and shipit_pr_url(result_text) is None:
+        return (False, "shipit produced no PR URL")
+    return (True, "")
