@@ -19,15 +19,25 @@ Look in `DOCS_DIR/superpowers/plans/` for a plan file whose name contains `{TICK
 - If none match, check `DOCS_DIR/superpowers/specs/` for a spec file containing `{TICKET_ID}` — a spec without a separate plan is acceptable input.
 - If nothing is found in either location, stop and tell the user to run `/personal:planit {TICKET_ID}` first.
 
-## Step 3 — Create the work branch
+## Step 3 — Load the milestone spec (if the plan references one)
+
+Read the chosen plan file. If it contains a line beginning `**Milestone spec:** `, resolve that
+relative path (from the plan file's location) and read the referenced milestone spec. Pass **both**
+the plan and the milestone spec to the implementation in Step 5 — the plan is the per-ticket slice,
+the milestone spec is the shared design context.
+
+If the plan has no such line (e.g. a `/planit`-authored plan), proceed with the plan alone — this
+step is a no-op. Backwards-compatible.
+
+## Step 4 — Create the work branch
 
 Derive a branch name from the ticket ID and the plan/spec title: `feat/{TICKET_ID}-short-description` (or `fix/` if the ticket is a bug fix). Use the ticket ID exactly as given — don't assume a project prefix.
 
 Check out the branch from main (or the current release branch if one exists and is the appropriate base — check with the user if ambiguous).
 
-## Step 4 — Hand off to Superpowers
+## Step 5 — Hand off to Superpowers
 
-Invoke `superpowers:subagent-driven-development`, passing it the resolved plan file path as the plan to execute.
+Invoke `superpowers:subagent-driven-development`, passing the resolved plan file path (and the milestone spec loaded in Step 3, if any, as design context) as the plan to execute.
 
 Let Superpowers run its full subagent-driven execution from here — fresh subagent per task, two-stage review (spec compliance then code quality) after each task, final whole-branch review at the end.
 

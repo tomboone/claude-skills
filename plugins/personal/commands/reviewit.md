@@ -39,7 +39,7 @@ Invoke the `superpowers:requesting-code-review` skill, providing:
 - `HEAD_SHA`: from above
 - `DESCRIPTION`: one-sentence summary of the change
 
-## Step 5 — Post findings as a PR comment
+## Step 5 — Post findings as a PR comment and emit STATUS
 
 When the reviewer subagent returns its findings, post them as a PR review comment:
 ```bash
@@ -65,6 +65,14 @@ Format the comment as (always end with the footer):
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
-If there are Critical or Important issues, tell the user what they are and that they should be addressed before merging. Do not proceed to merge.
+**If there are Critical or Important issues:** tell the user what they are and that they should be addressed before merging. Then, as the **very last line of your response**, emit:
 
-If the assessment is clean, tell the user to clear context and run `/personal:mergeit {TICKET_ID}` when ready. Stop here.
+```
+STATUS: CHANGES_REQUESTED
+```
+
+**If the assessment is clean (no Critical or Important issues):** tell the user to clear context and run `/personal:mergeit {TICKET_ID}` when ready. Then, as the **very last line of your response**, emit:
+
+```
+STATUS: APPROVED
+```

@@ -13,6 +13,16 @@ The single rule for where design specs and implementation plans live. `/planit`,
 
 3. Create `DOCS_DIR` and the subfolders below if they don't exist.
 
+## Linear target hints (for `/projectit`)
+
+A repo may declare its Linear home so `/projectit` can resolve it without searching:
+
+- `linear_initiative: <name-or-id>` — the initiative this repo's app belongs to (initiative ≈ one app).
+- `linear_team: <name-or-key>` — the team new issues/projects are created in.
+
+Set these in the repo's `CLAUDE.md` (sibling to `specs_dir`). If absent, `/projectit` searches
+initiatives by name and asks for confirmation, then offers to write the confirmed values back.
+
 ## Layout
 
 Under `DOCS_DIR`, always:
@@ -27,6 +37,9 @@ Only the base (`DOCS_DIR`) varies between projects — the `superpowers/specs` a
 - When a Linear ticket is associated, the filename **must** include the ticket ID so `/planit` and `/implementit` can find it.
 - Standard form: `<TICKET_ID>-<short-slug>.md` — e.g. `NEU-257-rss-ingestion.md`. Lowercase, hyphenated slug.
 - Locating a file = case-insensitive match on the filename containing the ticket ID.
+- **Milestone specs** are not ticket-scoped. Name them `DOCS_DIR/superpowers/specs/<project-slug>-m<NN>-<milestone-slug>.md`
+  (`<project-slug>` = hyphenated Linear project name; `<NN>` = zero-padded milestone order).
+  Ticket plans reference their milestone spec via a `` **Milestone spec:** `` line with the relative path (see `/projectit`).
 
 ## Examples
 
