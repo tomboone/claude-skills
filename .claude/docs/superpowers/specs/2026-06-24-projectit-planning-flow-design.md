@@ -83,10 +83,10 @@ Run from inside the **target app's repo** — the repo anchors the Linear initia
 
 | Phase | What happens | Gate |
 |---|---|---|
-| **0. Resolve Linear target** | Infer initiative from repo; search it for a matching project; propose *reuse X* or *create new*. | ■ confirm initiative + project |
-| **1. Project description** | Brainstorm purpose/scope/goals into a thorough description; set it on the Linear project. | ■ approve description |
-| **2. Milestones** | Propose milestones (name + goal + order); create them under the project. | ■ approve milestone list |
-| **3. Stories + tickets** | Per milestone, propose user stories (issues) with acceptance criteria and work tickets (sub-issues); create the hierarchy + dependency links. | ■ approve breakdown |
+| **0. Resolve Linear target** | Infer initiative from repo; search it for a matching project; **decide** *reuse X* or *create new* (no write). | ■ confirm initiative + project |
+| **1. Project description** | Brainstorm purpose/scope/goals into a thorough description; **hold it**. | ■ approve description |
+| **2. Milestones** | Propose milestones (name + goal + order); **hold them**. | ■ approve milestone list |
+| **3. Stories + tickets** | Per milestone, propose user stories (issues) with acceptance criteria and work tickets (sub-issues); on approval, **create the whole hierarchy in one batch** (project+description → milestones → stories → tickets → blockedBy). | ■ approve breakdown |
 | **4. Bulk doc-gen** | Subagents write one spec per milestone, one resilient plan per ticket; docs land on disk. | ■ bulk-review the docs |
 | **5. Link + mark ready** | Write plan/spec links into Linear; apply the `loop-ready` label. | — |
 
@@ -107,21 +107,24 @@ approve, then it writes. This contains the blast radius.
 - **Team:** required by `save_issue` and `save_project`. Resolve from the `linear_team` hint,
   else `list_teams` + ask.
 - **Project (reuse vs create):** the initiative's projects come back with the `list_initiatives`
-  call. If one plausibly matches the idea → propose *reuse*; else *create new*. On confirm:
-  - create → `save_project(name, addTeams:[team], addInitiatives:[initiative], description:…)`
-  - reuse → keep its ID; Phase 1 may update its description.
+  call. If one plausibly matches the idea → propose *reuse*; else *create new*. On confirm,
+  **record the decision only — do not write yet** (reuse → keep the existing id; create → hold the
+  new project name). The project is created in the Phase-3 batch.
 
 ### Phase 1 — Project description
 
 Invoke `superpowers:brainstorming` to develop purpose / scope / goals into a thorough project
-description. Set it on the Linear project (`save_project` description). Gate: user approves.
+description. Gate: user approves. **Hold the description** for the Phase-3 batch — do not write yet.
 
 ### Phase 2 — Milestones
 
-Each approved milestone → `save_milestone(project, name, description:<goal>)`. Gate: user
-approves the list before creation.
+Propose milestones; gate: user approves the list. **Hold the milestones** for the Phase-3 batch —
+do not write yet.
 
 ### Phase 3 — User stories & work tickets
+
+This phase proposes the stories/tickets and, **after its gate, runs the single creation batch for the
+whole hierarchy** — first the held project (with its Phase-1 description) and the held milestones, then:
 
 - **User story** → `save_issue(title, team, project, milestone, description:<story + acceptance
   criteria>, labels:["user-story"])` → returns e.g. `PROJ-101`.

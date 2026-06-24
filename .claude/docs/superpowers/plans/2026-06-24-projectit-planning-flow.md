@@ -15,7 +15,7 @@ These apply to every task; values are copied verbatim from the spec.
 - Command file: `plugins/personal/commands/projectit.md`; invoked as `/personal:projectit`.
 - Existing command style (match exactly): file begins with two comment lines — `# <one-line description>` then `# Usage: /personal:<cmd> {ARGS}` — followed by `## Step N — …` / `## Phase N — …` prose sections. See `planit.md` and `implementit.md`.
 - **Never set Linear issue `status`** — the GitHub↔Linear connector owns status transitions.
-- **No Linear writes before the Phase-3 gate** — phases 0–3 propose; the user approves; then writes happen.
+- **No Linear writes before the Phase-3 gate** — Phases 0–2 only propose/hold; the single Linear-creation batch runs after the Phase-3 gate, in order: project (+description) → milestones → stories → tickets → blockedBy.
 - Labels (exact strings): `user-story`, `loop-ready`. Ensure they exist via `create_issue_label` before applying.
 - Ticket plan filename: `plans/<TICKET-ID>-<slug>.md`. Milestone spec filename: `specs/<project-slug>-m<NN>-<milestone-slug>.md` (`NN` zero-padded, preserves order).
 - **Contract tokens inside each ticket plan file** (used by `/implementit`, must match exactly):
@@ -165,14 +165,12 @@ git commit -m "feat: load referenced milestone spec in implementit"
 4. **Project:** from the initiative's returned projects, if one plausibly matches the idea, propose
    "reuse <project>"; otherwise propose "create new: <name>".
 5. **■ Gate:** show the resolved initiative, team, and reuse/create decision; wait for confirmation.
-6. On confirm: if creating, `save_project(name=<name>, addTeams=[<team>], addInitiatives=[<initiative>])`
-   (skipped in dry-run — print instead). Record `PROJECT`. Offer to write `linear_initiative`/`linear_team`
-   back into the repo's `CLAUDE.md` if they were not already set.
+6. On confirm: **record the decision only — do not create the project yet.** For reuse, keep the existing project's id as `PROJECT`; for create, hold the new project NAME as `PROJECT_TO_CREATE`. All Linear creation is deferred to the single post-gate batch in Phase 3. Offer to write `linear_initiative`/`linear_team` back into the repo's `CLAUDE.md` if they were not already set (a local file write, allowed here).
 ```
 
 - [ ] **Step 3: Validate via dry-run**
 
-In a throwaway/sandbox repo (or with a `linear_initiative` hint set), run `/personal:projectit --dry-run "test idea"`. Confirm it: resolves an initiative + team, proposes reuse/create, stops at the gate, and (after confirm) prints — but does not execute — the `save_project` call.
+In a throwaway/sandbox repo (or with a `linear_initiative` hint set), run `/personal:projectit --dry-run "test idea"`. Confirm it: resolves an initiative + team, proposes reuse/create, stops at the gate, and on confirm records the decision **without any Linear write** (creation is deferred to Phase 3).
 
 - [ ] **Step 4: Commit**
 
@@ -189,8 +187,10 @@ git commit -m "feat: add projectit command scaffold and Linear target resolution
 - Modify: `plugins/personal/commands/projectit.md`
 
 **Interfaces:**
-- Consumes: `INITIATIVE`, `TEAM`, `PROJECT`, `DRY_RUN` (Task 3); Linear MCP `save_project`, `save_milestone`, `save_issue`; `superpowers:brainstorming`.
-- Produces: the created Linear hierarchy — milestones, user-story issues (e.g. `PROJ-101`), work-ticket sub-issues with `blockedBy` edges — consumed by Tasks 5–6.
+- Consumes: the Phase-0 decision (`PROJECT` id for reuse, or `PROJECT_TO_CREATE` name), `TEAM`, `INITIATIVE`, `DRY_RUN` (Task 3); Linear MCP `save_project`, `save_milestone`, `save_issue`; `superpowers:brainstorming`.
+- Produces: the full Linear hierarchy, created in ONE batch after the Phase-3 gate — project(+description), milestones, user-story issues (e.g. `PROJ-101`), work-ticket sub-issues with `blockedBy` edges — consumed by Tasks 5–6.
+
+> **Note (write-timing model):** Phases 0–2 only propose/hold; nothing is written to Linear until the single post-Phase-3-gate batch. This task must also **revise the Phase 0 section authored in Task 3** so its step 6 records the reuse/create decision instead of calling `save_project`.
 
 - [ ] **Step 1: Write Phase 1 (project description)**
 
@@ -198,8 +198,8 @@ git commit -m "feat: add projectit command scaffold and Linear target resolution
 ## Phase 1 — Project description  ■ gate
 
 Invoke `superpowers:brainstorming` framed on the idea + initiative context to produce a thorough
-project description (purpose, scope, goals). **■ Gate:** user approves. Then set it on the project
-(`save_project(id=PROJECT, description=…)`; dry-run prints instead).
+project description (purpose, scope, goals). **■ Gate:** user approves. **Hold the approved
+description** for the Phase-3 creation batch — do not write to Linear yet.
 ```
 
 - [ ] **Step 2: Write Phase 2 (milestones)**
@@ -208,7 +208,7 @@ project description (purpose, scope, goals). **■ Gate:** user approves. Then s
 ## Phase 2 — Milestones  ■ gate
 
 Propose milestones as a list of {name, one-paragraph goal, order}. **■ Gate:** user edits/approves.
-For each, `save_milestone(project=PROJECT, name=<name>, description=<goal>)` (dry-run prints instead).
+**Hold the approved milestone list** for the Phase-3 creation batch — do not write to Linear yet.
 ```
 
 - [ ] **Step 3: Write Phase 3 (stories + tickets + dependencies)**
@@ -220,20 +220,23 @@ For each milestone, propose user stories and, under each, work tickets. Granular
 one work ticket = one `/implementit` run = one PR; stories hold user-facing acceptance criteria,
 tickets are the implementable slices. Note inter-ticket dependencies (B builds on A).
 
-**■ Gate:** user reviews/edits the full breakdown before anything is written.
+**■ Gate:** user reviews/edits the full breakdown. **This is the single gate after which all Linear
+writes happen** — nothing was written in Phases 0–2.
 
-On approval, create top-down (dry-run prints each call instead):
-1. Story → `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, description=<story + acceptance criteria>, labels=["user-story"])`. Record its identifier.
-2. Ticket → `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, parentId=<story-id>, description=<intent>)`.
-3. Dependencies → for each "B builds on A", `save_issue(id=B, blockedBy=[A])`.
+On approval, create top-down in one batch (dry-run prints each call instead):
+1. **Project:** if creating new, `save_project(name=<PROJECT_TO_CREATE>, addTeams=[<team>], addInitiatives=[<initiative>], description=<held Phase-1 description>)`; if reusing, `save_project(id=PROJECT, description=<held Phase-1 description>)`. Record `PROJECT`.
+2. **Milestones:** for each held milestone, `save_milestone(project=PROJECT, name=<name>, description=<goal>)`.
+3. **Stories:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, description=<story + acceptance criteria>, labels=["user-story"])`. Record each identifier.
+4. **Tickets:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, parentId=<story-id>, description=<intent>)`.
+5. **Dependencies:** for each "B builds on A", `save_issue(id=B, blockedBy=[A])`.
 
-**Idempotency:** before creating, list existing milestones (by name) and issues (by title within
-PROJECT); update matches instead of duplicating. Safe to re-run.
+**Idempotency:** before creating, look up the project (by id/name), milestones (by name), and issues
+(by title within PROJECT); update matches instead of duplicating. Safe to re-run.
 ```
 
 - [ ] **Step 4: Validate via dry-run**
 
-Run `/personal:projectit --dry-run "test idea"` through to end of Phase 3. Confirm it prints a coherent create-order (stories before their tickets), sets `parentId` on tickets, emits `blockedBy` edges, applies `user-story` labels, and never prints a `status` write.
+Run `/personal:projectit --dry-run "test idea"` through to end of Phase 3. Confirm: nothing is printed as written during Phases 0–2; after the Phase-3 gate it prints a coherent create-order (project → milestones → stories → tickets → blockedBy), sets `parentId` on tickets, emits `blockedBy` edges, applies `user-story` labels, and never prints a `status` write.
 
 - [ ] **Step 5: Commit**
 
