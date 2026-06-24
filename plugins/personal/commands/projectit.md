@@ -84,3 +84,70 @@ It returns the path + a one-line summary. (Dry-run: write under `DOCS_DIR/superp
 Present a table: milestone → spec path; ticket → plan path (grouped by story), each with its
 one-line summary. The user reviews on disk. For any doc that is off, re-dispatch just that one
 subagent with the user's feedback appended. Proceed to Phase 5 only on approval.
+
+## Phase 5 — Link & mark ready
+
+### Step 1 — Ensure labels exist
+
+Call `list_issue_labels` for the team. Check for the labels `user-story` and `loop-ready`. For each
+that is missing, call `create_issue_label(name=<label>, color=<any>)`.
+(Dry-run: print each `create_issue_label` call instead of executing.)
+
+### Step 2 — Update work-ticket descriptions and apply `loop-ready`
+
+For each work ticket (leaf-level issue, not stories), compute:
+
+- **Relative plan path:** the path of `DOCS_DIR/superpowers/plans/<TICKET-ID>-<slug>.md` relative to
+  `DOCS_DIR`. Example: `superpowers/plans/PRD-42-add-widget.md`.
+- **Milestone spec reference:** the relative path of the ticket's milestone spec. Example:
+  `superpowers/specs/myproject-m01-foundation.md`.
+- **GitHub plan URL (best-effort):** if `DOCS_DIR` has been committed and pushed to the remote,
+  construct the URL as `<repo-remote-url>/blob/<default-branch>/<DOCS_DIR-relative-plan-path>`.
+  Skip the attachment if the file is not yet in the remote.
+
+Call `save_issue(id=<ticket-id>, description=<updated>, labels=["loop-ready"])` where the updated
+description prepends the following header block to the existing ticket description:
+
+```
+**Plan:** <relative plan path>
+**Milestone spec:** <relative milestone spec path>
+```
+
+If the plan URL is available, also call
+`create_attachment(issueId=<ticket-id>, title="Implementation plan", url=<github-plan-url>)` to add
+the `links` attachment.
+
+**Do not** set `status` on any issue — the GitHub↔Linear connector owns status transitions.
+
+(Dry-run: print each `save_issue` and `create_attachment` call instead of executing.)
+
+### Step 3 — Update milestone descriptions
+
+For each milestone, compute the relative path of its spec file (relative to `DOCS_DIR`). Call
+`save_milestone(id=<milestone-id>, description=<updated>)` where the updated description prepends:
+
+```
+**Spec:** <relative spec path>
+```
+
+to the existing milestone description (the held Phase-2 goal). If the spec URL is available (same
+committed-and-pushed check as Step 2), append a link: `([view on GitHub](<github-spec-url>))`.
+
+(Dry-run: print each `save_milestone` call instead of executing.)
+
+### Step 4 — Final summary
+
+Print a summary block:
+
+```
+Project: <Linear project URL>
+Milestones:   <count>
+User stories: <count>
+Work tickets: <count>  (<loop-ready count> marked loop-ready)
+
+Next step: run /implementit on any loop-ready ticket to begin implementation.
+```
+
+The `loop-ready` label is the signal the implementation loop uses to select tickets. The loop reads
+plans from disk by ticket ID; the Linear `links` attachment added in Step 2 is a human-convenience
+reference, not load-bearing for the loop.
