@@ -110,7 +110,7 @@ class TestFormatSummary(unittest.TestCase):
         self.assertIn("A-2", out)
         self.assertIn("shipit", out)          # failed step shown
         self.assertIn("A-3", out)             # held shown
-        self.assertIn("A-1", out)             # waiting_on shown
+        self.assertIn("waiting on A-1", out) # waiting_on shown
 
     def test_empty_wave_message(self):
         out = loop.format_summary([], [])
