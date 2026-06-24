@@ -69,3 +69,22 @@ def classify_outcome(returncode, result_text, timed_out, step):
     if step == "shipit" and shipit_pr_url(result_text) is None:
         return (False, "shipit produced no PR URL")
     return (True, "")
+
+
+def format_summary(results, held):
+    lines = ["", "=== Loop run summary ==="]
+    if not results:
+        lines.append("No tickets processed.")
+    for r in results:
+        if r.failed_step:
+            lines.append(f"  {r.ticket_id}: FAILED at {r.failed_step} — {r.reason}")
+        else:
+            pr = r.pr_url or "(no PR)"
+            review = r.review_status or "(no review)"
+            lines.append(f"  {r.ticket_id}: PR {pr} — review {review}")
+    if held:
+        lines.append("Held for a future run (blockers not yet merged):")
+        for h in held:
+            waiting = ", ".join(h.get("waiting_on", [])) or "?"
+            lines.append(f"  {h.get('id')}: waiting on {waiting}")
+    return "\n".join(lines)

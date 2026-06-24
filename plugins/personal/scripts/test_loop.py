@@ -96,5 +96,26 @@ class TestClassifyOutcome(unittest.TestCase):
         self.assertTrue(ok)
 
 
+class TestFormatSummary(unittest.TestCase):
+    def test_renders_success_and_failure_and_held(self):
+        results = [
+            loop.TicketResult("A-1", True, "https://github.com/o/r/pull/1", "APPROVED", None, None),
+            loop.TicketResult("A-2", True, None, None, "shipit", "shipit produced no PR URL"),
+        ]
+        held = [{"id": "A-3", "title": "later", "waiting_on": ["A-1"]}]
+        out = loop.format_summary(results, held)
+        self.assertIn("A-1", out)
+        self.assertIn("pull/1", out)
+        self.assertIn("APPROVED", out)
+        self.assertIn("A-2", out)
+        self.assertIn("shipit", out)          # failed step shown
+        self.assertIn("A-3", out)             # held shown
+        self.assertIn("A-1", out)             # waiting_on shown
+
+    def test_empty_wave_message(self):
+        out = loop.format_summary([], [])
+        self.assertIn("no", out.lower())      # e.g. "no tickets processed"
+
+
 if __name__ == "__main__":
     unittest.main()
