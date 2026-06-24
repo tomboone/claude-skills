@@ -90,7 +90,7 @@ subagent with the user's feedback appended. Proceed to Phase 5 only on approval.
 ### Step 1 — Ensure labels exist
 
 Call `list_issue_labels` for the team. Check for the labels `user-story` and `loop-ready`. For each
-that is missing, call `create_issue_label(name=<label>, color=<any>)`.
+that is missing, call `create_issue_label(name=<label>, color="#6E56CF")` (Phase 3 applies `user-story` to stories; it is bootstrapped here too so a re-run against an existing project does not fail).
 (Dry-run: print each `create_issue_label` call instead of executing.)
 
 ### Step 2 — Update work-ticket descriptions and apply `loop-ready`
