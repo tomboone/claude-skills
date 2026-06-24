@@ -68,3 +68,18 @@ Format the comment as (always end with the footer):
 If there are Critical or Important issues, tell the user what they are and that they should be addressed before merging. Do not proceed to merge.
 
 If the assessment is clean, tell the user to clear context and run `/personal:mergeit {TICKET_ID}` when ready. Stop here.
+
+## Step 6 — Emit machine-readable STATUS
+
+As the **last line of the response**, emit exactly one of:
+
+```
+STATUS: APPROVED
+STATUS: CHANGES_REQUESTED
+```
+
+Map from the assessment determined above:
+- Assessment is "Ready to merge" → emit `STATUS: APPROVED`
+- Assessment is "Needs changes" (any Critical or Important issues found) → emit `STATUS: CHANGES_REQUESTED`
+
+This status line is parsed by the orchestrator loop and does not affect the human-facing assessment or PR comment already posted.
