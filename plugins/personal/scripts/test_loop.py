@@ -187,5 +187,48 @@ class TestRunTicketPipeline(unittest.TestCase):
         self.assertEqual(cmds[2][cmds[2].index("--model") + 1], "opus")     # reviewit
 
 
+class TestResolveProject(unittest.TestCase):
+    def test_explicit_flag_wins(self):
+        args = loop.parse_args(["--project", "myproj"])
+        self.assertEqual(loop.resolve_project(args, lambda: ""), "myproj")
+
+    def test_falls_back_to_claude_md_hint(self):
+        args = loop.parse_args([])
+        md = "specs_dir: docs\nlinear_initiative: BigApp\nlinear_team: ENG\n"
+        self.assertEqual(loop.resolve_project(args, lambda: md), "BigApp")
+
+    def test_aborts_when_unresolvable(self):
+        args = loop.parse_args([])
+        with self.assertRaises(SystemExit):
+            loop.resolve_project(args, lambda: "no hints here")
+
+
+class TestSubprocessRunnerParsing(unittest.TestCase):
+    def test_extracts_result_field(self):
+        # _result_from_stdout is the pure JSON-extraction half of subprocess_runner
+        stdout = '{"session_id": "s", "result": "the answer", "total_cost_usd": 0.1}'
+        self.assertEqual(loop._result_from_stdout(stdout), "the answer")
+
+    def test_missing_result_returns_empty(self):
+        self.assertEqual(loop._result_from_stdout("not json"), "")
+
+
+class TestMainDryRun(unittest.TestCase):
+    def test_dry_run_prints_commands_without_running_pipeline(self):
+        # inject a triage that returns a 1-ticket wave; a recording runner that must NOT be
+        # called for the pipeline in dry-run.
+        wave = {"project": "p", "wave": [{"id": "A-1", "title": "t"}], "held": []}
+        calls = []
+        rc = loop.main(
+            ["--project", "p", "--dry-run"],
+            runner=lambda cmd, timeout: calls.append(cmd) or loop.InvocationResult(0, "", False),
+            triage_fn=lambda project, label, runner: wave,
+            guard_fn=lambda runner: (True, "ok"),
+        )
+        self.assertEqual(rc, 0)
+        # dry-run may call triage/guard via injected fns (not runner); pipeline must not run:
+        self.assertEqual(calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()
