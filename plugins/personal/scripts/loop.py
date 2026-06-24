@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Headless orchestrator: runs /implementit -> /shipit -> /reviewit per loop-ready ticket."""
 import json
-import re
 from collections import namedtuple
 
 InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out"])
