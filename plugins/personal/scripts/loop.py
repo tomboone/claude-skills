@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Headless orchestrator: runs /implementit -> /shipit -> /reviewit per loop-ready ticket."""
+import argparse
 import json
 import re
+import subprocess
+import sys
 from collections import namedtuple
 
 InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out"])
@@ -111,10 +114,6 @@ def format_summary(results, held):
             lines.append(f"  {h.get('id')}: waiting on {waiting}")
     return "\n".join(lines)
 
-
-import argparse
-import subprocess
-import sys
 
 TRIAGE_PROMPT = (
     "Using the Linear MCP, find work tickets in project {project!r} that are ready for the "
