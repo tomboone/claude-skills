@@ -2,13 +2,36 @@
 """Headless orchestrator: runs /implementit -> /shipit -> /reviewit per loop-ready ticket."""
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from collections import namedtuple
+from datetime import datetime, timezone
 
 InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out", "usage"], defaults=[None])
-TicketResult = namedtuple("TicketResult", ["ticket_id", "implemented", "pr_url", "review_status", "failed_step", "reason", "usage"], defaults=[None])
+TicketResult = namedtuple(
+    "TicketResult",
+    ["ticket_id", "implemented", "pr_url", "review_status", "failed_step", "reason", "usage", "disposition", "rounds"],
+    defaults=[None, None, 0],
+)
+
+
+def default_models():
+    return {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "opus",
+            "reviewit_rereview": "sonnet", "addressit": "sonnet", "mergeit": "haiku",
+            "triage": "sonnet", "guard": "haiku"}
+
+
+def default_timeouts():
+    return {"implementit": 1800, "shipit": 600, "reviewit": 900,
+            "addressit": 1800, "mergeit": 1200}
+
+
+def default_efforts():
+    return {"implementit": "high", "shipit": "low", "reviewit": "high",
+            "reviewit_rereview": "medium", "addressit": "medium", "mergeit": "low",
+            "triage": "medium", "guard": "low"}
 
 
 def parse_triage_result(result_text):
@@ -47,16 +70,41 @@ def parse_review_status(result_text):
     return None
 
 
+def parse_address_status(result_text):
+    text = result_text or ""
+    if "STATUS: BLOCKED" in text:
+        return "BLOCKED"
+    if "STATUS: PUSHED_BACK" in text:
+        return "PUSHED_BACK"
+    if "STATUS: ADDRESSED" in text:
+        return "ADDRESSED"
+    return None
+
+
+def parse_merge_status(result_text):
+    text = result_text or ""
+    if "STATUS: MERGE_BLOCKED" in text:
+        return "MERGE_BLOCKED"
+    if "STATUS: MERGED" in text:
+        return "MERGED"
+    return None
+
+
+MAX_ROUNDS = 3
+
 _PR_RE = re.compile(r"https://github\.com/[^\s)]+/pull/\d+")
 
 
-def build_claude_cmd(prompt, model):
-    return [
+def build_claude_cmd(prompt, model, effort=None):
+    cmd = [
         "claude", "-p", prompt,
         "--model", model,
         "--output-format", "json",
         "--permission-mode", "bypassPermissions",
     ]
+    if effort is not None:
+        cmd += ["--effort", effort]
+    return cmd
 
 
 def shipit_pr_url(result_text):
@@ -93,30 +141,70 @@ def _usage_record(step, model, usage):
     return rec
 
 
-def run_ticket_pipeline(ticket, runner, models, timeouts):
+def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None, emit=None):
     tid = ticket["id"]
     usages = []
 
-    res = runner(build_claude_cmd(f"/personal:implementit {tid}", models["implementit"]), timeouts["implementit"])
-    usages.append(_usage_record("implementit", models["implementit"], res.usage))
+    def step(name, model, timeout, label=None, effort_key=None):
+        if emit:
+            emit(label or name)
+        effort = (efforts or {}).get(effort_key or name)
+        res = runner(build_claude_cmd(f"/personal:{name} {tid}", model, effort=effort), timeout)
+        usages.append(_usage_record(name, model, res.usage))
+        return res
+
+    def fail(at, reason):
+        return TicketResult(tid, True, pr_url, last_review, at, reason, usages, "FAILED", rounds)
+
+    def stall(reason):
+        return TicketResult(tid, True, pr_url, last_review, None, reason, usages, "NEEDS_HUMAN", rounds)
+
+    pr_url = None
+    last_review = None
+    rounds = 0
+
+    res = step("implementit", models["implementit"], timeouts["implementit"])
     ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "implementit")
     if not ok:
-        return TicketResult(tid, False, None, None, "implementit", reason, usages)
+        return TicketResult(tid, False, None, None, "implementit", reason, usages, "FAILED", 0)
 
-    res = runner(build_claude_cmd(f"/personal:shipit {tid}", models["shipit"]), timeouts["shipit"])
-    usages.append(_usage_record("shipit", models["shipit"], res.usage))
+    res = step("shipit", models["shipit"], timeouts["shipit"])
     ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "shipit")
     if not ok:
-        return TicketResult(tid, True, None, None, "shipit", reason, usages)
+        return TicketResult(tid, True, None, None, "shipit", reason, usages, "FAILED", 0)
     pr_url = shipit_pr_url(res.result_text)
 
-    res = runner(build_claude_cmd(f"/personal:reviewit {tid}", models["reviewit"]), timeouts["reviewit"])
-    usages.append(_usage_record("reviewit", models["reviewit"], res.usage))
-    ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "reviewit")
-    if not ok:
-        return TicketResult(tid, True, pr_url, None, "reviewit", reason, usages)
+    while True:
+        rounds += 1
+        review_key = "reviewit" if rounds == 1 else "reviewit_rereview"
+        model = models[review_key]
+        res = step("reviewit", model, timeouts["reviewit"], label=f"reviewit (round {rounds})", effort_key=review_key)
+        if res.timed_out or res.returncode != 0:
+            return fail("reviewit", f"reviewit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
+        last_review = parse_review_status(res.result_text)
+        if last_review == "APPROVED":
+            break
+        if last_review != "CHANGES_REQUESTED":
+            return fail("reviewit", "reviewit emitted no verdict")
 
-    return TicketResult(tid, True, pr_url, parse_review_status(res.result_text), None, None, usages)
+        res = step("addressit", models["addressit"], timeouts["addressit"], label=f"addressit (round {rounds})")
+        if res.timed_out or res.returncode != 0:
+            return fail("addressit", f"addressit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
+        addressed = parse_address_status(res.result_text)
+        if addressed == "PUSHED_BACK":
+            return stall("impasse: reviewer requested changes, addressit pushed back")
+        if addressed == "BLOCKED" or addressed is None:
+            return stall("addressit blocked / emitted no status")
+        if rounds >= max_rounds:
+            return stall(f"max rounds ({max_rounds}) reached without approval")
+        # else ADDRESSED → loop for re-review
+
+    res = step("mergeit", models["mergeit"], timeouts["mergeit"])
+    if res.timed_out or res.returncode != 0:
+        return fail("mergeit", f"mergeit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
+    if parse_merge_status(res.result_text) == "MERGED":
+        return TicketResult(tid, True, pr_url, last_review, None, None, usages, "MERGED", rounds)
+    return stall("merge blocked (CI failed / verdict not ready)")
 
 
 _USAGE_FIELDS = ("cost_usd", "input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
@@ -169,8 +257,10 @@ def format_summary(results, held):
             line = f"  {r.ticket_id}: FAILED at {r.failed_step} — {r.reason}"
         else:
             pr = r.pr_url or "(no PR)"
-            review = r.review_status or "(no review)"
-            line = f"  {r.ticket_id}: PR {pr} — review {review}"
+            disp = r.disposition or (r.review_status or "(no review)")
+            line = f"  {r.ticket_id}: {disp} — PR {pr} — {r.rounds} round(s)"
+            if r.disposition == "NEEDS_HUMAN" and r.reason:
+                line += f" — {r.reason}"
         if r.usage:
             line += f" — ${_ticket_cost(r):.4f}"
         lines.append(line)
@@ -193,6 +283,28 @@ TRIAGE_PROMPT = (
 )
 
 
+def _loop_log_path(now):
+    # CWD-relative, like _read_repo_claude_md/resolve_project: the loop is invoked
+    # from the repo root, so this resolves to <repo>/.claude/loop/run-*.log.
+    return os.path.join(".claude", "loop", f"run-{now.strftime('%Y%m%dT%H%M%SZ')}.log")
+
+
+def _detached_argv(argv):
+    return [sys.executable, os.path.abspath(__file__)] + [a for a in argv if a != "--detach"]
+
+
+def _spawn_detached(argv):
+    log_path = _loop_log_path(datetime.now(timezone.utc))
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    gi = os.path.join(os.path.dirname(log_path), ".gitignore")
+    if not os.path.exists(gi):
+        with open(gi, "w") as f:
+            f.write("*\n")
+    logf = open(log_path, "w")
+    proc = subprocess.Popen(_detached_argv(argv), stdout=logf, stderr=subprocess.STDOUT, start_new_session=True)
+    return proc.pid, log_path
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(description="Run one wave of loop-ready tickets through implement/ship/review.")
     p.add_argument("--project")
@@ -202,6 +314,8 @@ def parse_args(argv):
     p.add_argument("--check", action="store_true")
     p.add_argument("--limit", type=int)
     p.add_argument("--notify", action="store_true")
+    p.add_argument("--max-rounds", type=int, default=MAX_ROUNDS)
+    p.add_argument("--detach", action="store_true")
     return p.parse_args(argv)
 
 
@@ -279,8 +393,16 @@ def run_triage(project, label, runner):
 
 def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibility_guard):
     args = parse_args(argv)
-    models = {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "opus"}
-    timeouts = {"implementit": 1800, "shipit": 600, "reviewit": 900}
+
+    if args.detach:
+        pid, log_path = _spawn_detached(argv)
+        print(f"Loop started (pid {pid}).")
+        print(f"Watch: tail -f {log_path}")
+        return 0
+
+    models = default_models()
+    timeouts = default_timeouts()
+    efforts = default_efforts()
 
     ok, msg = guard_fn(runner)
     if not ok:
@@ -301,12 +423,31 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
     if args.dry_run:
         print(f"Project: {project}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
         for t in wave:
-            for step, model in (("implementit", models["implementit"]), ("shipit", models["shipit"]), ("reviewit", models["reviewit"])):
-                print("  would run:", " ".join(build_claude_cmd(f"/personal:{step} {t['id']}", model)))
+            for step_name in ("implementit", "shipit", "reviewit"):
+                cmd = build_claude_cmd(f"/personal:{step_name} {t['id']}", models[step_name], effort=efforts.get(step_name))
+                print("  would run:", " ".join(cmd))
+            print(f"  then loop: reviewit ↔ addressit up to {args.max_rounds} round(s) "
+                  f"(re-review model {models['reviewit_rereview']}, effort {efforts.get('reviewit_rereview')})")
+            cmd = build_claude_cmd(f"/personal:mergeit {t['id']}", models["mergeit"], effort=efforts.get("mergeit"))
+            print("  would run:", " ".join(cmd))
         print(format_summary([], triage["held"]))
         return 0
 
-    results = [run_ticket_pipeline(t, runner, models, timeouts) for t in wave]
+    def emit(msg):
+        print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] {msg}", flush=True)
+
+    emit(f"wave: {len(wave)} ticket(s)")
+    results = []
+    for i, t in enumerate(wave, 1):
+        emit(f"[{i}/{len(wave)}] {t['id']}")
+        r = run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts, emit=emit)
+        if r.disposition == "NEEDS_HUMAN":
+            emit(f"{r.ticket_id} → NEEDS_HUMAN: {r.reason}")
+        elif r.failed_step:
+            emit(f"{r.ticket_id} → FAILED at {r.failed_step}")
+        else:
+            emit(f"{r.ticket_id} → {r.disposition}")
+        results.append(r)
     print(format_summary(results, triage["held"]))
     return 0
 

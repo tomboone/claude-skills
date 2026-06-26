@@ -32,6 +32,26 @@ class TestParseTriageResult(unittest.TestCase):
             loop.parse_triage_result("no json here")
 
 
+class TestParseAddressStatus(unittest.TestCase):
+    def test_addressed(self):
+        self.assertEqual(loop.parse_address_status("x\nSTATUS: ADDRESSED"), "ADDRESSED")
+    def test_pushed_back(self):
+        self.assertEqual(loop.parse_address_status("STATUS: PUSHED_BACK"), "PUSHED_BACK")
+    def test_blocked_wins(self):
+        self.assertEqual(loop.parse_address_status("STATUS: ADDRESSED\nSTATUS: BLOCKED"), "BLOCKED")
+    def test_none(self):
+        self.assertIsNone(loop.parse_address_status("nope"))
+
+
+class TestParseMergeStatus(unittest.TestCase):
+    def test_merged(self):
+        self.assertEqual(loop.parse_merge_status("done\nSTATUS: MERGED"), "MERGED")
+    def test_blocked_wins(self):
+        self.assertEqual(loop.parse_merge_status("STATUS: MERGED\nSTATUS: MERGE_BLOCKED"), "MERGE_BLOCKED")
+    def test_none(self):
+        self.assertIsNone(loop.parse_merge_status("nope"))
+
+
 class TestParseReviewStatus(unittest.TestCase):
     def test_approved(self):
         self.assertEqual(loop.parse_review_status("...\nSTATUS: APPROVED"), "APPROVED")
@@ -62,6 +82,25 @@ class TestBuildClaudeCmd(unittest.TestCase):
         self.assertNotIn("--resume", cmd)
         self.assertNotIn("--bare", cmd)
         self.assertNotIn("--max-turns", cmd)
+
+    def test_effort_flag_included_when_set(self):
+        cmd = loop.build_claude_cmd("/personal:implementit A-1", "sonnet", effort="high")
+        self.assertIn("--effort", cmd)
+        self.assertEqual(cmd[cmd.index("--effort") + 1], "high")
+
+    def test_effort_flag_absent_when_none(self):
+        cmd = loop.build_claude_cmd("/personal:implementit A-1", "sonnet", effort=None)
+        self.assertNotIn("--effort", cmd)
+
+
+class TestDefaultEfforts(unittest.TestCase):
+    def test_has_expected_keys(self):
+        efforts = loop.default_efforts()
+        for k in ("implementit", "shipit", "reviewit", "reviewit_rereview", "addressit", "mergeit"):
+            self.assertIn(k, efforts)
+
+    def test_implementit_is_high_effort(self):
+        self.assertIn(loop.default_efforts()["implementit"], ("high", "xhigh", "max"))
 
 
 class TestShipitPrUrl(unittest.TestCase):
@@ -130,8 +169,19 @@ class TestFormatSummary(unittest.TestCase):
         self.assertIn("no", out.lower())      # e.g. "no tickets processed"
 
 
-MODELS = {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "opus"}
-TIMEOUTS = {"implementit": 1800, "shipit": 600, "reviewit": 900}
+class TestTicketResultShape(unittest.TestCase):
+    def test_disposition_and_rounds_default(self):
+        r = loop.TicketResult("A-1", True, None, None, None, None)  # 6-arg legacy
+        self.assertIsNone(r.disposition)
+        self.assertEqual(r.rounds, 0)
+    def test_main_models_have_loop_keys(self):
+        models = loop.default_models()
+        for k in ("reviewit_rereview", "addressit", "mergeit"):
+            self.assertIn(k, models)
+
+
+MODELS = loop.default_models()
+TIMEOUTS = loop.default_timeouts()
 
 
 def make_runner(scripted):
@@ -151,20 +201,22 @@ class TestRunTicketPipeline(unittest.TestCase):
             loop.InvocationResult(0, "implemented\nSTATUS: IMPLEMENTED", False),
             loop.InvocationResult(0, "PR https://github.com/o/r/pull/7", False),
             loop.InvocationResult(0, "review done\nSTATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGED", False),
         ])
         r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
         self.assertTrue(r.implemented)
         self.assertEqual(r.pr_url, "https://github.com/o/r/pull/7")
         self.assertEqual(r.review_status, "APPROVED")
         self.assertIsNone(r.failed_step)
-        self.assertEqual(len(runner.calls["cmds"]), 3)
+        self.assertEqual(r.disposition, "MERGED")
+        self.assertEqual(len(runner.calls["cmds"]), 4)
 
     def test_implement_failure_skips_rest(self):
         runner = make_runner([loop.InvocationResult(1, "", False)])
         r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
         self.assertFalse(r.implemented)
         self.assertEqual(r.failed_step, "implementit")
-        self.assertEqual(len(runner.calls["cmds"]), 1)   # ship/review never run
+        self.assertEqual(len(runner.calls["cmds"]), 1)   # ship/review/merge never run
 
     def test_implement_noop_without_sentinel_skips_rest(self):
         # exit 0 but no STATUS: IMPLEMENTED — e.g. implementit found no plan and bailed
@@ -172,7 +224,7 @@ class TestRunTicketPipeline(unittest.TestCase):
         r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
         self.assertFalse(r.implemented)
         self.assertEqual(r.failed_step, "implementit")
-        self.assertEqual(len(runner.calls["cmds"]), 1)   # ship/review never run
+        self.assertEqual(len(runner.calls["cmds"]), 1)   # ship/review/merge never run
 
     def test_ship_failure_skips_review(self):
         runner = make_runner([
@@ -183,29 +235,61 @@ class TestRunTicketPipeline(unittest.TestCase):
         self.assertTrue(r.implemented)
         self.assertIsNone(r.pr_url)
         self.assertEqual(r.failed_step, "shipit")
-        self.assertEqual(len(runner.calls["cmds"]), 2)   # review never run
+        self.assertEqual(len(runner.calls["cmds"]), 2)   # review/merge never run
 
     def test_changes_requested_is_not_a_failure(self):
+        # CHANGES_REQUESTED → addressit → re-review → merge
         runner = make_runner([
             loop.InvocationResult(0, "implemented\nSTATUS: IMPLEMENTED", False),
             loop.InvocationResult(0, "PR https://github.com/o/r/pull/8", False),
             loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: ADDRESSED", False),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGED", False),
         ])
         r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
         self.assertIsNone(r.failed_step)
-        self.assertEqual(r.review_status, "CHANGES_REQUESTED")
+        self.assertEqual(r.review_status, "APPROVED")
         self.assertEqual(r.pr_url, "https://github.com/o/r/pull/8")
+        self.assertEqual(r.disposition, "MERGED")
 
     def test_uses_correct_models(self):
         runner = make_runner([
             loop.InvocationResult(0, "x\nSTATUS: IMPLEMENTED", False),
             loop.InvocationResult(0, "https://github.com/o/r/pull/9", False),
             loop.InvocationResult(0, "STATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGED", False),
         ])
         loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
         cmds = runner.calls["cmds"]
         self.assertEqual(cmds[0][cmds[0].index("--model") + 1], "sonnet")   # implementit
-        self.assertEqual(cmds[2][cmds[2].index("--model") + 1], "opus")     # reviewit
+        self.assertEqual(cmds[2][cmds[2].index("--model") + 1], "opus")     # reviewit round 1
+        self.assertEqual(cmds[3][cmds[3].index("--model") + 1], "haiku")    # mergeit
+
+
+class TestDetach(unittest.TestCase):
+    def test_flag_parsed(self):
+        self.assertTrue(loop.parse_args(["--detach"]).detach)
+
+    def test_log_path_shape(self):
+        import datetime as dt
+        p = loop._loop_log_path(dt.datetime(2026, 6, 26, 14, 5, 9))
+        self.assertIn(os.path.join(".claude", "loop", "run-"), p)
+        self.assertTrue(p.endswith(".log"))
+        self.assertIn("20260626", p)
+
+    def test_detached_argv_strips_detach(self):
+        out = loop._detached_argv(["--project", "p", "--detach", "--max-rounds", "2"])
+        self.assertNotIn("--detach", out)
+        self.assertIn("--project", out)
+        self.assertEqual(out[0], sys.executable)
+
+
+class TestMaxRoundsArg(unittest.TestCase):
+    def test_flag_parsed(self):
+        self.assertEqual(loop.parse_args(["--max-rounds", "2"]).max_rounds, 2)
+    def test_default(self):
+        self.assertEqual(loop.parse_args([]).max_rounds, loop.MAX_ROUNDS)
 
 
 class TestResolveProject(unittest.TestCase):
@@ -287,9 +371,10 @@ class TestPipelineUsage(unittest.TestCase):
             loop.InvocationResult(0, "x\nSTATUS: IMPLEMENTED", False, _usage(1.0, 100, 10)),
             loop.InvocationResult(0, "https://github.com/o/r/pull/5", False, _usage(0.2, 50, 5)),
             loop.InvocationResult(0, "STATUS: APPROVED", False, _usage(2.0, 300, 30)),
+            loop.InvocationResult(0, "STATUS: MERGED", False, _usage(0.1, 20, 5)),
         ])
         r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
-        self.assertEqual([u["step"] for u in r.usage], ["implementit", "shipit", "reviewit"])
+        self.assertEqual([u["step"] for u in r.usage], ["implementit", "shipit", "reviewit", "mergeit"])
         self.assertEqual(r.usage[2]["model"], "opus")
         self.assertEqual(r.usage[2]["cost_usd"], 2.0)
 
@@ -299,6 +384,125 @@ class TestPipelineUsage(unittest.TestCase):
         self.assertEqual(len(r.usage), 1)
         self.assertEqual(r.usage[0]["step"], "implementit")
         self.assertEqual(r.usage[0]["cost_usd"], 0.5)
+
+
+class TestPipelineStateMachine(unittest.TestCase):
+    def _impl(self): return loop.InvocationResult(0, "STATUS: IMPLEMENTED", False)
+    def _ship(self): return loop.InvocationResult(0, "PR https://github.com/o/r/pull/1", False)
+
+    def test_approved_first_round_merges(self):
+        runner = make_runner([self._impl(), self._ship(),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGED", False)])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertEqual(r.disposition, "MERGED")
+        self.assertEqual(r.rounds, 1)
+        self.assertEqual(len(runner.calls["cmds"]), 4)
+
+    def test_changes_then_addressed_then_approved_merges(self):
+        runner = make_runner([self._impl(), self._ship(),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: ADDRESSED", False),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGED", False)])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertEqual(r.disposition, "MERGED")
+        self.assertEqual(r.rounds, 2)
+        # round-2 review uses reviewit_rereview model
+        review_cmds = [c for c in runner.calls["cmds"] if "reviewit" in c[2]]
+        self.assertEqual(review_cmds[0][review_cmds[0].index("--model")+1], "opus")
+        self.assertEqual(review_cmds[1][review_cmds[1].index("--model")+1], "sonnet")
+
+    def test_pushed_back_stalls(self):
+        runner = make_runner([self._impl(), self._ship(),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: PUSHED_BACK", False)])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertEqual(r.disposition, "NEEDS_HUMAN")
+        self.assertIn("impasse", r.reason.lower())
+
+    def test_rounds_exhausted_stalls(self):
+        seq = [self._impl(), self._ship()]
+        for _ in range(3):  # MAX_ROUNDS=3: review CHANGES + address ADDRESSED, three times
+            seq += [loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+                    loop.InvocationResult(0, "STATUS: ADDRESSED", False)]
+        r = loop.run_ticket_pipeline({"id": "A-1"}, make_runner(seq), MODELS, TIMEOUTS, max_rounds=3)
+        self.assertEqual(r.disposition, "NEEDS_HUMAN")
+        self.assertEqual(r.rounds, 3)
+
+    def test_addressit_blocked_stalls(self):
+        runner = make_runner([self._impl(), self._ship(),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: BLOCKED", False)])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertEqual(r.disposition, "NEEDS_HUMAN")
+
+    def test_merge_blocked_is_needs_human(self):
+        runner = make_runner([self._impl(), self._ship(),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGE_BLOCKED", False)])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertEqual(r.disposition, "NEEDS_HUMAN")
+        self.assertIn("merge", r.reason.lower())
+
+    def test_mergeit_not_run_unless_approved(self):
+        runner = make_runner([self._impl(), self._ship(),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: PUSHED_BACK", False)])
+        loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertFalse(any("mergeit" in c[2] for c in runner.calls["cmds"]))
+
+    def test_effort_per_step_reaches_invocations(self):
+        # effort must land on the actual per-step claude commands, and the round-2
+        # re-review must use reviewit_rereview's effort (not round-1 reviewit's).
+        runner = make_runner([self._impl(), self._ship(),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: ADDRESSED", False),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGED", False)])
+        efforts = loop.default_efforts()
+        loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS, efforts=efforts)
+        cmds = runner.calls["cmds"]
+        def eff(c):
+            return c[c.index("--effort") + 1]
+        self.assertEqual(eff(cmds[0]), efforts["implementit"])         # implementit
+        self.assertEqual(eff(cmds[1]), efforts["shipit"])              # shipit
+        self.assertEqual(eff(cmds[2]), efforts["reviewit"])            # reviewit round 1
+        self.assertEqual(eff(cmds[3]), efforts["addressit"])           # addressit round 1
+        self.assertEqual(eff(cmds[4]), efforts["reviewit_rereview"])   # reviewit round 2
+        self.assertEqual(eff(cmds[5]), efforts["mergeit"])             # mergeit
+
+
+class TestProgressEvents(unittest.TestCase):
+    def test_pipeline_emits_step_labels(self):
+        seen = []
+        runner = make_runner([
+            loop.InvocationResult(0, "STATUS: IMPLEMENTED", False),
+            loop.InvocationResult(0, "PR https://github.com/o/r/pull/1", False),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: ADDRESSED", False),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGED", False),
+        ])
+        loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS, emit=seen.append)
+        for label in ("implementit", "shipit", "reviewit (round 1)",
+                      "addressit (round 1)", "reviewit (round 2)", "mergeit"):
+            self.assertIn(label, seen)
+
+
+class TestSummaryDisposition(unittest.TestCase):
+    def test_shows_disposition_and_rounds(self):
+        r = loop.TicketResult("A-1", True, "https://github.com/o/r/pull/1", "APPROVED",
+                              None, None, None, "MERGED", 2)
+        out = loop.format_summary([r], [])
+        self.assertIn("MERGED", out)
+        self.assertIn("2 round", out)
+    def test_needs_human_reason_shown(self):
+        r = loop.TicketResult("A-2", True, "https://github.com/o/r/pull/2", "CHANGES_REQUESTED",
+                              None, "impasse: ...", None, "NEEDS_HUMAN", 3)
+        out = loop.format_summary([r], [])
+        self.assertIn("NEEDS_HUMAN", out)
+        self.assertIn("impasse", out)
 
 
 class TestFormatSummaryUsage(unittest.TestCase):
