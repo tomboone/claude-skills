@@ -3,15 +3,7 @@
 
 ## Step 1 — Resolve the PR for this ticket
 
-Find the open PR whose head branch is for `{TICKET_ID}`:
-
-```bash
-gh pr list --state open --json number,headRefName,title --limit 50
-```
-
-Pick the PR whose `headRefName` contains `{TICKET_ID}` (case-insensitive); if none match there, fall back to a title containing the ID. If multiple match, list them and ask the user which to use. If none match, stop and tell the user there's no open PR for `{TICKET_ID}` (did they run `/personal:shipit {TICKET_ID}`?). Call the chosen number `PR_NUMBER`.
-
-(If the user passes a bare PR number instead of a ticket ID, use it directly as `PR_NUMBER`.)
+Resolve `PR_NUMBER` for `{TICKET_ID}` as defined in `plugins/personal/pr-resolution-convention.md`. If no open PR matches, stop and tell the user there's no open PR for `{TICKET_ID}` (did they run `/personal:shipit {TICKET_ID}`?).
 
 ## Step 2 — Load review context and fetch the live PR state
 
