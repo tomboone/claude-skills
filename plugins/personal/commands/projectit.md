@@ -28,7 +28,9 @@
    each repo's canonical name from `git remote get-url origin` (basename, strip `.git`); else
    (c) query GitHub for likely repos (org repos, prioritizing names matching the
    initiative/project) and propose them. Record the resolved set as `REPOS`. If it resolves to a
-   single repo, default all tickets to that repo's canonical name.
+   single repo, default all tickets to that repo's canonical name. If all
+   three tiers leave `REPOS` empty or unresolved, ask the user directly to
+   name the target repo(s) before proceeding to Phase 3.
 
 ## Phase 1 — Project description  ■ gate
 
@@ -105,7 +107,7 @@ subagent with the user's feedback appended. Proceed to Phase 5 only on approval.
 Call `list_issue_labels` for the team. Check for the labels `user-story` and `loop-ready`. For each
 that is missing, call `create_issue_label` with a distinct color per label: `user-story` → `color="#6E56CF"`, `loop-ready` → `color="#30A46C"`. (Phase 3 applies `user-story` to stories; it is bootstrapped here too so a re-run against an existing project does not fail.)
 Also, for each repo in `REPOS`, ensure a `repo:<name>` label exists; create any missing one with
-`create_issue_label` using a distinct color (e.g. `color="#0091FF"`). (Dry-run: print each call.)
+`create_issue_label` using a distinct color (e.g. `color="#0091FF"`).
 (Dry-run: print each `create_issue_label` call instead of executing.)
 
 ### Step 2 — Update work-ticket descriptions and apply `loop-ready`
