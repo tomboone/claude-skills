@@ -145,10 +145,10 @@ def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS,
     tid = ticket["id"]
     usages = []
 
-    def step(name, model, timeout, label=None):
+    def step(name, model, timeout, label=None, effort_key=None):
         if emit:
             emit(label or name)
-        effort = (efforts or {}).get(name)
+        effort = (efforts or {}).get(effort_key or name)
         res = runner(build_claude_cmd(f"/personal:{name} {tid}", model, effort=effort), timeout)
         usages.append(_usage_record(name, model, res.usage))
         return res
@@ -176,8 +176,9 @@ def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS,
 
     while True:
         rounds += 1
-        model = models["reviewit"] if rounds == 1 else models["reviewit_rereview"]
-        res = step("reviewit", model, timeouts["reviewit"], label=f"reviewit (round {rounds})")
+        review_key = "reviewit" if rounds == 1 else "reviewit_rereview"
+        model = models[review_key]
+        res = step("reviewit", model, timeouts["reviewit"], label=f"reviewit (round {rounds})", effort_key=review_key)
         if res.timed_out or res.returncode != 0:
             return fail("reviewit", f"reviewit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
         last_review = parse_review_status(res.result_text)
@@ -283,6 +284,8 @@ TRIAGE_PROMPT = (
 
 
 def _loop_log_path(now):
+    # CWD-relative, like _read_repo_claude_md/resolve_project: the loop is invoked
+    # from the repo root, so this resolves to <repo>/.claude/loop/run-*.log.
     return os.path.join(".claude", "loop", f"run-{now.strftime('%Y%m%dT%H%M%SZ')}.log")
 
 
@@ -420,14 +423,13 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
     if args.dry_run:
         print(f"Project: {project}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
         for t in wave:
-            for step_name, model in (
-                ("implementit", models["implementit"]),
-                ("shipit", models["shipit"]),
-                ("reviewit", models["reviewit"]),
-                (f"reviewit ↔ addressit up to {args.max_rounds} rounds", models["reviewit_rereview"]),
-                ("mergeit", models["mergeit"]),
-            ):
-                print("  would run:", " ".join(build_claude_cmd(f"/personal:{step_name} {t['id']}", model)))
+            for step_name in ("implementit", "shipit", "reviewit"):
+                cmd = build_claude_cmd(f"/personal:{step_name} {t['id']}", models[step_name], effort=efforts.get(step_name))
+                print("  would run:", " ".join(cmd))
+            print(f"  then loop: reviewit ↔ addressit up to {args.max_rounds} round(s) "
+                  f"(re-review model {models['reviewit_rereview']}, effort {efforts.get('reviewit_rereview')})")
+            cmd = build_claude_cmd(f"/personal:mergeit {t['id']}", models["mergeit"], effort=efforts.get("mergeit"))
+            print("  would run:", " ".join(cmd))
         print(format_summary([], triage["held"]))
         return 0
 

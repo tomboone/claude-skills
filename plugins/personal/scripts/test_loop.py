@@ -452,6 +452,26 @@ class TestPipelineStateMachine(unittest.TestCase):
         loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
         self.assertFalse(any("mergeit" in c[2] for c in runner.calls["cmds"]))
 
+    def test_effort_per_step_reaches_invocations(self):
+        # effort must land on the actual per-step claude commands, and the round-2
+        # re-review must use reviewit_rereview's effort (not round-1 reviewit's).
+        runner = make_runner([self._impl(), self._ship(),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: ADDRESSED", False),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGED", False)])
+        efforts = loop.default_efforts()
+        loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS, efforts=efforts)
+        cmds = runner.calls["cmds"]
+        def eff(c):
+            return c[c.index("--effort") + 1]
+        self.assertEqual(eff(cmds[0]), efforts["implementit"])         # implementit
+        self.assertEqual(eff(cmds[1]), efforts["shipit"])              # shipit
+        self.assertEqual(eff(cmds[2]), efforts["reviewit"])            # reviewit round 1
+        self.assertEqual(eff(cmds[3]), efforts["addressit"])           # addressit round 1
+        self.assertEqual(eff(cmds[4]), efforts["reviewit_rereview"])   # reviewit round 2
+        self.assertEqual(eff(cmds[5]), efforts["mergeit"])             # mergeit
+
 
 class TestProgressEvents(unittest.TestCase):
     def test_pipeline_emits_step_labels(self):
