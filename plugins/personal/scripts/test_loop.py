@@ -32,6 +32,26 @@ class TestParseTriageResult(unittest.TestCase):
             loop.parse_triage_result("no json here")
 
 
+class TestParseAddressStatus(unittest.TestCase):
+    def test_addressed(self):
+        self.assertEqual(loop.parse_address_status("x\nSTATUS: ADDRESSED"), "ADDRESSED")
+    def test_pushed_back(self):
+        self.assertEqual(loop.parse_address_status("STATUS: PUSHED_BACK"), "PUSHED_BACK")
+    def test_blocked_wins(self):
+        self.assertEqual(loop.parse_address_status("STATUS: ADDRESSED\nSTATUS: BLOCKED"), "BLOCKED")
+    def test_none(self):
+        self.assertIsNone(loop.parse_address_status("nope"))
+
+
+class TestParseMergeStatus(unittest.TestCase):
+    def test_merged(self):
+        self.assertEqual(loop.parse_merge_status("done\nSTATUS: MERGED"), "MERGED")
+    def test_blocked_wins(self):
+        self.assertEqual(loop.parse_merge_status("STATUS: MERGED\nSTATUS: MERGE_BLOCKED"), "MERGE_BLOCKED")
+    def test_none(self):
+        self.assertIsNone(loop.parse_merge_status("nope"))
+
+
 class TestParseReviewStatus(unittest.TestCase):
     def test_approved(self):
         self.assertEqual(loop.parse_review_status("...\nSTATUS: APPROVED"), "APPROVED")

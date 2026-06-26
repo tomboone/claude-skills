@@ -47,6 +47,26 @@ def parse_review_status(result_text):
     return None
 
 
+def parse_address_status(result_text):
+    text = result_text or ""
+    if "STATUS: BLOCKED" in text:
+        return "BLOCKED"
+    if "STATUS: PUSHED_BACK" in text:
+        return "PUSHED_BACK"
+    if "STATUS: ADDRESSED" in text:
+        return "ADDRESSED"
+    return None
+
+
+def parse_merge_status(result_text):
+    text = result_text or ""
+    if "STATUS: MERGE_BLOCKED" in text:
+        return "MERGE_BLOCKED"
+    if "STATUS: MERGED" in text:
+        return "MERGED"
+    return None
+
+
 _PR_RE = re.compile(r"https://github\.com/[^\s)]+/pull/\d+")
 
 
