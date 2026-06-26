@@ -384,19 +384,22 @@ class TestSubprocessRunnerParsing(unittest.TestCase):
 
 class TestMainDryRun(unittest.TestCase):
     def test_dry_run_prints_commands_without_running_pipeline(self):
-        # inject a triage that returns a 1-ticket wave; a recording runner that must NOT be
-        # called for the pipeline in dry-run.
+        import io, contextlib
         wave = {"project": "p", "wave": [{"id": "A-1", "title": "t"}], "held": []}
         calls = []
-        rc = loop.main(
-            ["--project", "p", "--dry-run"],
-            runner=lambda cmd, timeout: calls.append(cmd) or loop.InvocationResult(0, "", False),
-            triage_fn=lambda project, label, runner: wave,
-            guard_fn=lambda runner: (True, "ok"),
-        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = loop.main(
+                ["--project", "p", "--repo", "testrepo", "--dry-run"],
+                runner=lambda cmd, timeout: calls.append(cmd) or loop.InvocationResult(0, "", False),
+                triage_fn=lambda project, label, repo_label, runner: wave,
+                guard_fn=lambda runner: (True, "ok"),
+            )
         self.assertEqual(rc, 0)
-        # dry-run may call triage/guard via injected fns (not runner); pipeline must not run:
+        # pipeline must not run in dry-run:
         self.assertEqual(calls, [])
+        # the resolved repo filter is surfaced:
+        self.assertIn("Repo filter: repo:testrepo", buf.getvalue())
 
 
 class TestUsageFromStdout(unittest.TestCase):
