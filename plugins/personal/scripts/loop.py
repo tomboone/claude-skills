@@ -26,6 +26,12 @@ def default_timeouts():
             "addressit": 1800, "mergeit": 1200}
 
 
+def default_efforts():
+    return {"implementit": "high", "shipit": "low", "reviewit": "high",
+            "reviewit_rereview": "medium", "addressit": "medium", "mergeit": "low",
+            "triage": "medium", "guard": "low"}
+
+
 def parse_triage_result(result_text):
     """Extract the last JSON object from triage output; normalize keys."""
     text = (result_text or "").strip()
@@ -87,13 +93,16 @@ MAX_ROUNDS = 3
 _PR_RE = re.compile(r"https://github\.com/[^\s)]+/pull/\d+")
 
 
-def build_claude_cmd(prompt, model):
-    return [
+def build_claude_cmd(prompt, model, effort=None):
+    cmd = [
         "claude", "-p", prompt,
         "--model", model,
         "--output-format", "json",
         "--permission-mode", "bypassPermissions",
     ]
+    if effort is not None:
+        cmd += ["--effort", effort]
+    return cmd
 
 
 def shipit_pr_url(result_text):
@@ -130,12 +139,13 @@ def _usage_record(step, model, usage):
     return rec
 
 
-def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS):
+def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None):
     tid = ticket["id"]
     usages = []
 
     def step(name, model, timeout):
-        res = runner(build_claude_cmd(f"/personal:{name} {tid}", model), timeout)
+        effort = (efforts or {}).get(name)
+        res = runner(build_claude_cmd(f"/personal:{name} {tid}", model, effort=effort), timeout)
         usages.append(_usage_record(name, model, res.usage))
         return res
 
@@ -357,6 +367,7 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
     args = parse_args(argv)
     models = default_models()
     timeouts = default_timeouts()
+    efforts = default_efforts()
 
     ok, msg = guard_fn(runner)
     if not ok:
@@ -388,7 +399,7 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
         print(format_summary([], triage["held"]))
         return 0
 
-    results = [run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds) for t in wave]
+    results = [run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts) for t in wave]
     print(format_summary(results, triage["held"]))
     return 0
 

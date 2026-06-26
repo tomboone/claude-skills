@@ -83,6 +83,25 @@ class TestBuildClaudeCmd(unittest.TestCase):
         self.assertNotIn("--bare", cmd)
         self.assertNotIn("--max-turns", cmd)
 
+    def test_effort_flag_included_when_set(self):
+        cmd = loop.build_claude_cmd("/personal:implementit A-1", "sonnet", effort="high")
+        self.assertIn("--effort", cmd)
+        self.assertEqual(cmd[cmd.index("--effort") + 1], "high")
+
+    def test_effort_flag_absent_when_none(self):
+        cmd = loop.build_claude_cmd("/personal:implementit A-1", "sonnet", effort=None)
+        self.assertNotIn("--effort", cmd)
+
+
+class TestDefaultEfforts(unittest.TestCase):
+    def test_has_expected_keys(self):
+        efforts = loop.default_efforts()
+        for k in ("implementit", "shipit", "reviewit", "reviewit_rereview", "addressit", "mergeit"):
+            self.assertIn(k, efforts)
+
+    def test_implementit_is_high_effort(self):
+        self.assertIn(loop.default_efforts()["implementit"], ("high", "xhigh", "max"))
+
 
 class TestShipitPrUrl(unittest.TestCase):
     def test_finds_pr_url(self):
