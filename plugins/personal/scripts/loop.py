@@ -275,9 +275,12 @@ def format_summary(results, held):
 
 TRIAGE_PROMPT = (
     "Using the Linear MCP, find work tickets in project {project!r} that are ready for the "
-    "implementation loop: they carry the {label!r} label, every one of their blockedBy blockers "
-    "has status Done, and the ticket itself is still un-started (status Todo or Backlog, not "
-    "In Progress/In Review/Done). Return ONLY a JSON object as your final message, no prose:\n"
+    "implementation loop. A ticket qualifies only if ALL hold: it carries BOTH the {label!r} "
+    "label AND the {repo_label!r} label; every one of its blockedBy blockers has status Done; "
+    "and the ticket itself is still un-started (status Todo or Backlog, not In Progress/In "
+    "Review/Done). EXCLUDE any issue that has sub-issues (children) or carries the 'user-story' "
+    "label — those are containers, not implementable work. Return ONLY a JSON object as your "
+    "final message, no prose:\n"
     '{{"project": "{project}", "wave": [{{"id": "...", "title": "..."}}], '
     '"held": [{{"id": "...", "title": "...", "waiting_on": ["..."]}}]}}'
 )
@@ -308,6 +311,7 @@ def _spawn_detached(argv):
 def parse_args(argv):
     p = argparse.ArgumentParser(description="Run one wave of loop-ready tickets through implement/ship/review<->address/merge.")
     p.add_argument("--project")
+    p.add_argument("--repo")
     p.add_argument("--label", default="loop-ready")
     p.add_argument("--tickets", nargs="*")
     p.add_argument("--dry-run", action="store_true")
@@ -366,6 +370,46 @@ def _read_repo_claude_md():
     return ""
 
 
+def _repo_name_from_url(url):
+    """Canonical repo name (basename, no .git) from an origin remote URL; None if unparseable."""
+    s = (url or "").strip().rstrip("/")
+    if not s:
+        return None
+    if s.endswith(".git"):
+        s = s[:-4]
+    # scp-style uses ':' before the path; normalize it to '/' then take the last segment
+    last = s.replace(":", "/").rstrip("/").split("/")[-1]
+    return last or None
+
+
+def _git_remote_url():
+    """origin remote URL via git, or None if unavailable (no repo / no remote / git missing)."""
+    try:
+        proc = subprocess.run(["git", "remote", "get-url", "origin"],
+                              capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def resolve_repo_label(args, read_claude_md=_read_repo_claude_md, remote_url_fn=_git_remote_url):
+    """Resolve this repo's loop label as 'repo:<name>'. --repo > linear_repo: hint > git remote."""
+    name = args.repo
+    if name is None:
+        for line in read_claude_md().splitlines():
+            if line.strip().lower().startswith("linear_repo:"):
+                name = line.split(":", 1)[1].strip()
+                break
+    if name is None:
+        name = _repo_name_from_url(remote_url_fn())
+    if not name:
+        raise SystemExit(
+            "Cannot resolve repo: pass --repo, set 'linear_repo:' in the repo CLAUDE.md, "
+            "or run from a repo with an 'origin' git remote."
+        )
+    return f"repo:{name}"
+
+
 def resolve_project(args, read_claude_md=_read_repo_claude_md):
     if args.project:
         return args.project
@@ -384,8 +428,9 @@ def feasibility_guard(runner):
     return (True, "ok")
 
 
-def run_triage(project, label, runner):
-    res = runner(build_claude_cmd(TRIAGE_PROMPT.format(project=project, label=label), "sonnet"), 300)
+def run_triage(project, label, repo_label, runner):
+    res = runner(build_claude_cmd(
+        TRIAGE_PROMPT.format(project=project, label=label, repo_label=repo_label), "sonnet"), 300)
     if res.timed_out or res.returncode != 0:
         raise SystemExit("Triage call failed.")
     return parse_triage_result(res.result_text)
@@ -415,13 +460,16 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
     project = resolve_project(args)
     if args.tickets:
         triage = {"project": project, "wave": [{"id": t, "title": ""} for t in args.tickets], "held": []}
+        repo_label = None
     else:
-        triage = triage_fn(project, args.label, runner)
+        repo_label = resolve_repo_label(args)
+        triage = triage_fn(project, args.label, repo_label, runner)
 
     wave = triage["wave"][: args.limit] if args.limit else triage["wave"]
 
     if args.dry_run:
-        print(f"Project: {project}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
+        filt = repo_label if repo_label else "(none — explicit tickets)"
+        print(f"Project: {project}. Repo filter: {filt}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
         for t in wave:
             for step_name in ("implementit", "shipit", "reviewit"):
                 cmd = build_claude_cmd(f"/personal:{step_name} {t['id']}", models[step_name], effort=efforts.get(step_name))

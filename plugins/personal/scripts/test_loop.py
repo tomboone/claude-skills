@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import sys
 import unittest
@@ -308,6 +310,70 @@ class TestResolveProject(unittest.TestCase):
             loop.resolve_project(args, lambda: "no hints here")
 
 
+class TestRepoNameFromUrl(unittest.TestCase):
+    def test_ssh_remote(self):
+        self.assertEqual(loop._repo_name_from_url("git@github.com:tomboone/claude-skills.git"), "claude-skills")
+
+    def test_https_remote(self):
+        self.assertEqual(loop._repo_name_from_url("https://github.com/org/report-exporters.git"), "report-exporters")
+
+    def test_without_git_suffix(self):
+        self.assertEqual(loop._repo_name_from_url("https://github.com/org/report-exporters"), "report-exporters")
+
+    def test_trailing_slash(self):
+        self.assertEqual(loop._repo_name_from_url("https://github.com/org/report-exporters/"), "report-exporters")
+
+    def test_empty_or_none(self):
+        self.assertIsNone(loop._repo_name_from_url(""))
+        self.assertIsNone(loop._repo_name_from_url(None))
+
+
+class TestRepoArg(unittest.TestCase):
+    def test_flag_parsed(self):
+        self.assertEqual(loop.parse_args(["--repo", "myrepo"]).repo, "myrepo")
+
+    def test_default_none(self):
+        self.assertIsNone(loop.parse_args([]).repo)
+
+
+class TestResolveRepoLabel(unittest.TestCase):
+    def test_explicit_flag_wins(self):
+        args = loop.parse_args(["--repo", "backend"])
+        label = loop.resolve_repo_label(args, read_claude_md=lambda: "linear_repo: other\n",
+                                        remote_url_fn=lambda: "git@github.com:o/remote-repo.git")
+        self.assertEqual(label, "repo:backend")
+
+    def test_claude_md_hint_second(self):
+        args = loop.parse_args([])
+        label = loop.resolve_repo_label(args, read_claude_md=lambda: "linear_initiative: X\nlinear_repo: bi-api\n",
+                                        remote_url_fn=lambda: "git@github.com:o/remote-repo.git")
+        self.assertEqual(label, "repo:bi-api")
+
+    def test_git_remote_fallback(self):
+        args = loop.parse_args([])
+        label = loop.resolve_repo_label(args, read_claude_md=lambda: "",
+                                        remote_url_fn=lambda: "https://github.com/o/report-exporters.git")
+        self.assertEqual(label, "repo:report-exporters")
+
+    def test_aborts_when_unresolvable(self):
+        args = loop.parse_args([])
+        with self.assertRaises(SystemExit):
+            loop.resolve_repo_label(args, read_claude_md=lambda: "", remote_url_fn=lambda: None)
+
+
+class TestTriagePrompt(unittest.TestCase):
+    def test_prompt_includes_repo_and_parent_guard(self):
+        rendered = loop.TRIAGE_PROMPT.format(project="P", label="loop-ready", repo_label="repo:backend")
+        self.assertIn("repo:backend", rendered)
+        self.assertIn("loop-ready", rendered)
+        # parent / user-story exclusion must be present
+        self.assertIn("sub-issues", rendered)
+        self.assertIn("user-story", rendered)
+        # JSON contract is unchanged
+        self.assertIn('"wave"', rendered)
+        self.assertIn('"held"', rendered)
+
+
 class TestSubprocessRunnerParsing(unittest.TestCase):
     def test_extracts_result_field(self):
         # _result_from_stdout is the pure JSON-extraction half of subprocess_runner
@@ -320,19 +386,37 @@ class TestSubprocessRunnerParsing(unittest.TestCase):
 
 class TestMainDryRun(unittest.TestCase):
     def test_dry_run_prints_commands_without_running_pipeline(self):
-        # inject a triage that returns a 1-ticket wave; a recording runner that must NOT be
-        # called for the pipeline in dry-run.
         wave = {"project": "p", "wave": [{"id": "A-1", "title": "t"}], "held": []}
         calls = []
-        rc = loop.main(
-            ["--project", "p", "--dry-run"],
-            runner=lambda cmd, timeout: calls.append(cmd) or loop.InvocationResult(0, "", False),
-            triage_fn=lambda project, label, runner: wave,
-            guard_fn=lambda runner: (True, "ok"),
-        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = loop.main(
+                ["--project", "p", "--repo", "testrepo", "--dry-run"],
+                runner=lambda cmd, timeout: calls.append(cmd) or loop.InvocationResult(0, "", False),
+                triage_fn=lambda project, label, repo_label, runner: wave,
+                guard_fn=lambda runner: (True, "ok"),
+            )
         self.assertEqual(rc, 0)
-        # dry-run may call triage/guard via injected fns (not runner); pipeline must not run:
+        # pipeline must not run in dry-run:
         self.assertEqual(calls, [])
+        # the resolved repo filter is surfaced:
+        self.assertIn("Repo filter: repo:testrepo", buf.getvalue())
+
+
+class TestTicketsPathNoRepoResolve(unittest.TestCase):
+    def test_tickets_path_does_not_call_resolve_repo_label(self):
+        import unittest.mock
+        # Make resolve_repo_label raise SystemExit — it must never be reached on --tickets path.
+        with unittest.mock.patch("loop.resolve_repo_label", side_effect=SystemExit("should not be called")):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = loop.main(
+                    ["--project", "p", "--tickets", "A-1", "--dry-run"],
+                    runner=lambda cmd, timeout: loop.InvocationResult(0, "", False),
+                    guard_fn=lambda runner: (True, "ok"),
+                )
+        self.assertEqual(rc, 0)
+        self.assertIn("(none — explicit tickets)", buf.getvalue())
 
 
 class TestUsageFromStdout(unittest.TestCase):

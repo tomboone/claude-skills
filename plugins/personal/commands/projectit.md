@@ -21,6 +21,16 @@
    store `PROJECT_TO_CREATE=<name>`. **Do not call `save_project` here** — all Linear writes are deferred
    to the Phase-3 batch. Offer to write `linear_initiative`/`linear_team` back into the repo's
    `CLAUDE.md` if they were not already set.
+7. **Candidate repos (`REPOS`):** resolve the set of repos this project's tickets may target,
+   most authoritative first: (a) a `linear_repos:` list in `CLAUDE.md`; else (b) local sibling
+   git repos discovered by scanning the umbrella folder **and** the surrounding workspace root
+   (a bounded walk-up — stop at the workspace root, do not scan the whole filesystem), taking
+   each repo's canonical name from `git remote get-url origin` (basename, strip `.git`); else
+   (c) query GitHub for likely repos (org repos, prioritizing names matching the
+   initiative/project) and propose them. Record the resolved set as `REPOS`. If it resolves to a
+   single repo, default all tickets to that repo's canonical name. If all
+   three tiers leave `REPOS` empty or unresolved, ask the user directly to
+   name the target repo(s) before proceeding to Phase 3.
 
 ## Phase 1 — Project description  ■ gate
 
@@ -38,6 +48,11 @@ Propose milestones as a list of {name, one-paragraph goal, order}. **■ Gate:**
 For each milestone, propose user stories and, under each, work tickets. Granularity rule:
 one work ticket = one `/implementit` run = one PR; stories hold user-facing acceptance criteria,
 tickets are the implementable slices. Note inter-ticket dependencies (B builds on A).
+
+**Repo assignment:** assign each work ticket exactly one repo from `REPOS` (its `repo:<name>`).
+**Never silently guess** — whenever a ticket's repo is ambiguous (multiple plausible candidates,
+or `REPOS` is thin/empty), ask the user which repo to label. Show each ticket's assigned repo in
+the breakdown so the user can edit it at the gate. Stories (parent issues) get no repo assignment.
 
 **■ Gate:** user reviews/edits the full breakdown. **This is the single gate after which all Linear
 writes happen** — nothing was written in Phases 0–2.
@@ -91,6 +106,8 @@ subagent with the user's feedback appended. Proceed to Phase 5 only on approval.
 
 Call `list_issue_labels` for the team. Check for the labels `user-story` and `loop-ready`. For each
 that is missing, call `create_issue_label` with a distinct color per label: `user-story` → `color="#6E56CF"`, `loop-ready` → `color="#30A46C"`. (Phase 3 applies `user-story` to stories; it is bootstrapped here too so a re-run against an existing project does not fail.)
+Also, for each repo in `REPOS`, ensure a `repo:<name>` label exists; create any missing one with
+`create_issue_label` using a distinct color (e.g. `color="#0091FF"`).
 (Dry-run: print each `create_issue_label` call instead of executing.)
 
 ### Step 2 — Update work-ticket descriptions and apply `loop-ready`
@@ -105,7 +122,7 @@ For each work ticket (leaf-level issue, not stories), compute:
   construct the URL as `<repo-remote-url>/blob/<default-branch>/<DOCS_DIR-relative-plan-path>`.
   Skip the attachment if the file is not yet in the remote.
 
-Call `save_issue(id=<ticket-id>, description=<updated>, labels=["loop-ready"])` where the updated
+Call `save_issue(id=<ticket-id>, description=<updated>, labels=["loop-ready", "repo:<assigned-repo>"])` where the updated
 description prepends the following header block to the existing ticket description:
 
 ```
@@ -146,6 +163,7 @@ Work tickets: <count>  (<loop-ready count> marked loop-ready)
 Next step: run /implementit on any loop-ready ticket to begin implementation.
 ```
 
-The `loop-ready` label is the signal the implementation loop uses to select tickets. The loop reads
-plans from disk by ticket ID; the Linear `links` attachment added in Step 2 is a human-convenience
-reference, not load-bearing for the loop.
+The loop selects work tickets by the `loop-ready` label **scoped to the repo it runs in** (the
+`repo:<name>` label), so running it in a given repo root only picks up that repo's tickets. The
+loop reads plans from disk by ticket ID; the Linear `links` attachment added in Step 2 is a
+human-convenience reference, not load-bearing for the loop.
