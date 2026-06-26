@@ -277,6 +277,7 @@ def parse_args(argv):
     p.add_argument("--check", action="store_true")
     p.add_argument("--limit", type=int)
     p.add_argument("--notify", action="store_true")
+    p.add_argument("--max-rounds", type=int, default=MAX_ROUNDS)
     return p.parse_args(argv)
 
 
@@ -376,12 +377,18 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
     if args.dry_run:
         print(f"Project: {project}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
         for t in wave:
-            for step, model in (("implementit", models["implementit"]), ("shipit", models["shipit"]), ("reviewit", models["reviewit"])):
-                print("  would run:", " ".join(build_claude_cmd(f"/personal:{step} {t['id']}", model)))
+            for step_name, model in (
+                ("implementit", models["implementit"]),
+                ("shipit", models["shipit"]),
+                ("reviewit", models["reviewit"]),
+                (f"reviewit ↔ addressit up to {args.max_rounds} rounds", models["reviewit_rereview"]),
+                ("mergeit", models["mergeit"]),
+            ):
+                print("  would run:", " ".join(build_claude_cmd(f"/personal:{step_name} {t['id']}", model)))
         print(format_summary([], triage["held"]))
         return 0
 
-    results = [run_ticket_pipeline(t, runner, models, timeouts) for t in wave]
+    results = [run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds) for t in wave]
     print(format_summary(results, triage["held"]))
     return 0
 

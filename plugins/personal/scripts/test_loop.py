@@ -248,6 +248,13 @@ class TestRunTicketPipeline(unittest.TestCase):
         self.assertEqual(cmds[3][cmds[3].index("--model") + 1], "haiku")    # mergeit
 
 
+class TestMaxRoundsArg(unittest.TestCase):
+    def test_flag_parsed(self):
+        self.assertEqual(loop.parse_args(["--max-rounds", "2"]).max_rounds, 2)
+    def test_default(self):
+        self.assertEqual(loop.parse_args([]).max_rounds, loop.MAX_ROUNDS)
+
+
 class TestResolveProject(unittest.TestCase):
     def test_explicit_flag_wins(self):
         args = loop.parse_args(["--project", "myproj"])
