@@ -141,7 +141,7 @@ def _usage_record(step, model, usage):
     return rec
 
 
-def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None, emit=None):
+def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None, emit=None, merge=False):
     tid = ticket["id"]
     usages = []
 
@@ -198,6 +198,9 @@ def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS,
         if rounds >= max_rounds:
             return stall(f"max rounds ({max_rounds}) reached without approval")
         # else ADDRESSED → loop for re-review
+
+    if not merge:
+        return TicketResult(tid, True, pr_url, last_review, None, None, usages, "READY_FOR_REVIEW", rounds)
 
     res = step("mergeit", models["mergeit"], timeouts["mergeit"])
     if res.timed_out or res.returncode != 0:
