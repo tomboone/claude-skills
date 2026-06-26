@@ -251,5 +251,79 @@ class TestMainDryRun(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+class TestUsageFromStdout(unittest.TestCase):
+    def test_extracts_cost_and_tokens(self):
+        stdout = (
+            '{"result": "x", "total_cost_usd": 0.42, '
+            '"usage": {"input_tokens": 1000, "output_tokens": 200, '
+            '"cache_read_input_tokens": 800, "cache_creation_input_tokens": 50}}'
+        )
+        u = loop._usage_from_stdout(stdout)
+        self.assertEqual(u["cost_usd"], 0.42)
+        self.assertEqual(u["input_tokens"], 1000)
+        self.assertEqual(u["output_tokens"], 200)
+        self.assertEqual(u["cache_read_input_tokens"], 800)
+        self.assertEqual(u["cache_creation_input_tokens"], 50)
+
+    def test_returns_none_on_bad_json(self):
+        self.assertIsNone(loop._usage_from_stdout("not json"))
+
+    def test_missing_usage_object_yields_none_token_fields(self):
+        u = loop._usage_from_stdout('{"result": "x", "total_cost_usd": 0.1}')
+        self.assertEqual(u["cost_usd"], 0.1)
+        self.assertIsNone(u["input_tokens"])
+
+
+def _usage(cost, inp, out):
+    return {
+        "cost_usd": cost, "input_tokens": inp, "output_tokens": out,
+        "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+    }
+
+
+class TestPipelineUsage(unittest.TestCase):
+    def test_records_usage_per_step(self):
+        runner = make_runner([
+            loop.InvocationResult(0, "x\nSTATUS: IMPLEMENTED", False, _usage(1.0, 100, 10)),
+            loop.InvocationResult(0, "https://github.com/o/r/pull/5", False, _usage(0.2, 50, 5)),
+            loop.InvocationResult(0, "STATUS: APPROVED", False, _usage(2.0, 300, 30)),
+        ])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertEqual([u["step"] for u in r.usage], ["implementit", "shipit", "reviewit"])
+        self.assertEqual(r.usage[2]["model"], "opus")
+        self.assertEqual(r.usage[2]["cost_usd"], 2.0)
+
+    def test_records_usage_for_failed_step(self):
+        runner = make_runner([loop.InvocationResult(1, "", False, _usage(0.5, 20, 0))])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertEqual(len(r.usage), 1)
+        self.assertEqual(r.usage[0]["step"], "implementit")
+        self.assertEqual(r.usage[0]["cost_usd"], 0.5)
+
+
+class TestFormatSummaryUsage(unittest.TestCase):
+    def _rec(self, step, model, cost, inp, out):
+        return {
+            "step": step, "model": model, "cost_usd": cost,
+            "input_tokens": inp, "output_tokens": out,
+            "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+        }
+
+    def test_renders_per_step_and_total(self):
+        usage = [self._rec("implementit", "sonnet", 1.0, 100, 10),
+                 self._rec("reviewit", "opus", 2.0, 300, 30)]
+        results = [loop.TicketResult("A-1", True, "https://github.com/o/r/pull/1", "APPROVED", None, None, usage)]
+        out = loop.format_summary(results, [])
+        self.assertIn("implementit", out)
+        self.assertIn("reviewit", out)
+        self.assertIn("3.0000", out)   # total cost 1.0 + 2.0
+        self.assertIn("TOTAL", out)
+
+    def test_no_usage_section_when_usage_absent(self):
+        results = [loop.TicketResult("A-1", True, "https://github.com/o/r/pull/1", "APPROVED", None, None)]
+        out = loop.format_summary(results, [])
+        self.assertNotIn("TOTAL", out)
+
+
 if __name__ == "__main__":
     unittest.main()

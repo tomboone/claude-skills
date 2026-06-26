@@ -7,8 +7,8 @@ import subprocess
 import sys
 from collections import namedtuple
 
-InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out"])
-TicketResult = namedtuple("TicketResult", ["ticket_id", "implemented", "pr_url", "review_status", "failed_step", "reason"])
+InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out", "usage"], defaults=[None])
+TicketResult = namedtuple("TicketResult", ["ticket_id", "implemented", "pr_url", "review_status", "failed_step", "reason", "usage"], defaults=[None])
 
 
 def parse_triage_result(result_text):
@@ -86,26 +86,78 @@ def classify_outcome(returncode, result_text, timed_out, step):
     return (True, "")
 
 
+def _usage_record(step, model, usage):
+    rec = {"step": step, "model": model}
+    if usage:
+        rec.update(usage)
+    return rec
+
+
 def run_ticket_pipeline(ticket, runner, models, timeouts):
     tid = ticket["id"]
+    usages = []
 
     res = runner(build_claude_cmd(f"/personal:implementit {tid}", models["implementit"]), timeouts["implementit"])
+    usages.append(_usage_record("implementit", models["implementit"], res.usage))
     ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "implementit")
     if not ok:
-        return TicketResult(tid, False, None, None, "implementit", reason)
+        return TicketResult(tid, False, None, None, "implementit", reason, usages)
 
     res = runner(build_claude_cmd(f"/personal:shipit {tid}", models["shipit"]), timeouts["shipit"])
+    usages.append(_usage_record("shipit", models["shipit"], res.usage))
     ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "shipit")
     if not ok:
-        return TicketResult(tid, True, None, None, "shipit", reason)
+        return TicketResult(tid, True, None, None, "shipit", reason, usages)
     pr_url = shipit_pr_url(res.result_text)
 
     res = runner(build_claude_cmd(f"/personal:reviewit {tid}", models["reviewit"]), timeouts["reviewit"])
+    usages.append(_usage_record("reviewit", models["reviewit"], res.usage))
     ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "reviewit")
     if not ok:
-        return TicketResult(tid, True, pr_url, None, "reviewit", reason)
+        return TicketResult(tid, True, pr_url, None, "reviewit", reason, usages)
 
-    return TicketResult(tid, True, pr_url, parse_review_status(res.result_text), None, None)
+    return TicketResult(tid, True, pr_url, parse_review_status(res.result_text), None, None, usages)
+
+
+_USAGE_FIELDS = ("cost_usd", "input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+_STEP_ORDER = ("implementit", "shipit", "reviewit", "addressit", "mergeit")
+
+
+def _ticket_cost(r):
+    return sum(
+        rec["cost_usd"] for rec in (r.usage or [])
+        if isinstance(rec.get("cost_usd"), (int, float))
+    )
+
+
+def _sum_usage(results):
+    """Aggregate cost/tokens per step and overall across ticket results."""
+    by_step = {}
+    total = {f: 0 for f in _USAGE_FIELDS}
+    for r in results:
+        for rec in (r.usage or []):
+            agg = by_step.setdefault(rec.get("step", "?"), {f: 0 for f in _USAGE_FIELDS})
+            for f in _USAGE_FIELDS:
+                v = rec.get(f)
+                if isinstance(v, (int, float)):
+                    agg[f] += v
+                    total[f] += v
+    return by_step, total
+
+
+def _format_usage_lines(results):
+    by_step, total = _sum_usage(results)
+    if not by_step:
+        return []
+    def row(label, a):
+        return (f"  {label}: ${a['cost_usd']:.4f}  {a['input_tokens']} in / {a['output_tokens']} out"
+                f"  (cache read {a['cache_read_input_tokens']})")
+    lines = ["Usage by step:"]
+    ordered = [s for s in _STEP_ORDER if s in by_step] + [s for s in by_step if s not in _STEP_ORDER]
+    for step in ordered:
+        lines.append(row(step, by_step[step]))
+    lines.append(row("TOTAL", total))
+    return lines
 
 
 def format_summary(results, held):
@@ -114,11 +166,15 @@ def format_summary(results, held):
         lines.append("No tickets processed.")
     for r in results:
         if r.failed_step:
-            lines.append(f"  {r.ticket_id}: FAILED at {r.failed_step} — {r.reason}")
+            line = f"  {r.ticket_id}: FAILED at {r.failed_step} — {r.reason}"
         else:
             pr = r.pr_url or "(no PR)"
             review = r.review_status or "(no review)"
-            lines.append(f"  {r.ticket_id}: PR {pr} — review {review}")
+            line = f"  {r.ticket_id}: PR {pr} — review {review}"
+        if r.usage:
+            line += f" — ${_ticket_cost(r):.4f}"
+        lines.append(line)
+    lines.extend(_format_usage_lines(results))
     if held:
         lines.append("Held for a future run (blockers not yet merged):")
         for h in held:
@@ -149,19 +205,41 @@ def parse_args(argv):
     return p.parse_args(argv)
 
 
-def _result_from_stdout(stdout):
+def _parse_claude_json(stdout):
+    """Parse a `claude -p --output-format json` payload; return the dict or None."""
     try:
-        return json.loads(stdout).get("result", "") or ""
-    except (json.JSONDecodeError, AttributeError):
-        return ""
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _result_from_stdout(stdout):
+    payload = _parse_claude_json(stdout)
+    return (payload.get("result") or "") if payload else ""
+
+
+def _usage_from_stdout(stdout):
+    """Pull cost + token counts from a claude -p payload into a flat dict (None if unparseable)."""
+    payload = _parse_claude_json(stdout)
+    if not payload:
+        return None
+    usage = payload.get("usage") or {}
+    return {
+        "cost_usd": payload.get("total_cost_usd"),
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "cache_read_input_tokens": usage.get("cache_read_input_tokens"),
+        "cache_creation_input_tokens": usage.get("cache_creation_input_tokens"),
+    }
 
 
 def subprocess_runner(cmd, timeout):
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return InvocationResult(proc.returncode, _result_from_stdout(proc.stdout), False)
+        return InvocationResult(proc.returncode, _result_from_stdout(proc.stdout), False, _usage_from_stdout(proc.stdout))
     except subprocess.TimeoutExpired:
-        return InvocationResult(-1, "", True)
+        return InvocationResult(-1, "", True, None)
 
 
 def _read_repo_claude_md():
