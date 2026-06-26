@@ -189,8 +189,16 @@ Several commands share on-disk conventions so they behave identically on every m
   review-context bundle (Linear intent + spec/plan) that `/reviewit` and `/addressit` load-or-generate
   so a review and its response measure the PR against the same ground truth.
 
-A repo can also declare `linear_initiative:` / `linear_team:` in its `CLAUDE.md` so `/projectit` and
-the loop can resolve the Linear target without searching.
+A repo can also declare hint keys in its `CLAUDE.md` so `/projectit` and the loop can resolve the
+Linear target without searching:
+
+- `linear_initiative: <name>` — the Linear initiative (project group) this repo belongs to.
+- `linear_team: <name>` — the Linear team to create tickets under.
+- `linear_repo: <name>` — overrides the loop's auto-derived repo label (`repo:<name>`). The loop
+  otherwise derives `<name>` from `git remote get-url origin` (basename). Used to filter triage to
+  this repo's tickets within a multi-repo project.
+- `linear_repos: [<name>, <name>, …]` — for `/projectit`: the canonical repo names a project's
+  tickets may target, so each ticket can be tagged with the right `repo:<name>` at creation.
 
 ## The canonical global `CLAUDE.md`
 
