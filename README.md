@@ -99,7 +99,7 @@ implementit → shipit → ┌─ reviewit ──→ APPROVED ──[--merge]─
 
 - The review ↔ address alternation is **bounded** by `--max-rounds` (default 3). One round =
   one `reviewit` + (if not approved) one `addressit`.
-- A ticket **merges only after an `APPROVED` verdict**.
+- A ticket is merged only after an `APPROVED` verdict **and only when `--merge` is set**; otherwise an APPROVED verdict leaves the PR at `READY_FOR_REVIEW` for a human/team to merge.
 - Any **stall** — an impasse (`PUSHED_BACK`), `addressit` `BLOCKED`, rounds exhausted without
   approval, or `MERGE_BLOCKED` — records the ticket's disposition as `NEEDS_HUMAN` with a reason and
   **continues to the next ticket**. The wave is never stopped by a single stalled ticket.
@@ -116,7 +116,7 @@ Run it from inside the target app's repo (so file reads and git operations resol
 ```bash
 plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
                                  [--tickets ID ...] [--dry-run] [--check] \
-                                 [--limit N] [--notify] [--max-rounds N] [--detach]
+                                 [--limit N] [--notify] [--max-rounds N] [--detach] [--merge]
 ```
 
 | Flag | Effect |
@@ -124,7 +124,7 @@ plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
 | `--project <name>` | Override the project; otherwise inferred from the repo's `linear_initiative:` CLAUDE.md hint. |
 | `--label <name>` | Ready-marker label to triage on (default `loop-ready`). |
 | `--tickets ID …` | Bypass triage with an explicit ticket list. |
-| `--dry-run` | Run read-only triage and print the wave + the exact `claude -p` commands (including the bounded review↔address step and the merge) without executing. |
+| `--dry-run` | Run read-only triage and print the wave + the exact `claude -p` commands (including the bounded review↔address step and the merge/stop step) without executing. |
 | `--check` | Run only the feasibility guard (verifies `claude -p` + Linear/GitHub MCP are reachable). |
 | `--limit N` | Cap the wave size. |
 | `--notify` | Send a single end-of-run notification. |
