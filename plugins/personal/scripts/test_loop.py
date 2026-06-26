@@ -267,6 +267,24 @@ class TestRunTicketPipeline(unittest.TestCase):
         self.assertEqual(cmds[3][cmds[3].index("--model") + 1], "haiku")    # mergeit
 
 
+class TestDetach(unittest.TestCase):
+    def test_flag_parsed(self):
+        self.assertTrue(loop.parse_args(["--detach"]).detach)
+
+    def test_log_path_shape(self):
+        import datetime as dt
+        p = loop._loop_log_path(dt.datetime(2026, 6, 26, 14, 5, 9))
+        self.assertIn(os.path.join(".claude", "loop", "run-"), p)
+        self.assertTrue(p.endswith(".log"))
+        self.assertIn("20260626", p)
+
+    def test_detached_argv_strips_detach(self):
+        out = loop._detached_argv(["--project", "p", "--detach", "--max-rounds", "2"])
+        self.assertNotIn("--detach", out)
+        self.assertIn("--project", out)
+        self.assertEqual(out[0], sys.executable)
+
+
 class TestMaxRoundsArg(unittest.TestCase):
     def test_flag_parsed(self):
         self.assertEqual(loop.parse_args(["--max-rounds", "2"]).max_rounds, 2)

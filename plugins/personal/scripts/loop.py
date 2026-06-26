@@ -2,6 +2,7 @@
 """Headless orchestrator: runs /implementit -> /shipit -> /reviewit per loop-ready ticket."""
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -281,6 +282,26 @@ TRIAGE_PROMPT = (
 )
 
 
+def _loop_log_path(now):
+    return os.path.join(".claude", "loop", f"run-{now.strftime('%Y%m%dT%H%M%SZ')}.log")
+
+
+def _detached_argv(argv):
+    return [sys.executable, os.path.abspath(__file__)] + [a for a in argv if a != "--detach"]
+
+
+def _spawn_detached(argv):
+    log_path = _loop_log_path(datetime.now(timezone.utc))
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    gi = os.path.join(os.path.dirname(log_path), ".gitignore")
+    if not os.path.exists(gi):
+        with open(gi, "w") as f:
+            f.write("*\n")
+    logf = open(log_path, "w")
+    proc = subprocess.Popen(_detached_argv(argv), stdout=logf, stderr=subprocess.STDOUT, start_new_session=True)
+    return proc.pid, log_path
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(description="Run one wave of loop-ready tickets through implement/ship/review.")
     p.add_argument("--project")
@@ -291,6 +312,7 @@ def parse_args(argv):
     p.add_argument("--limit", type=int)
     p.add_argument("--notify", action="store_true")
     p.add_argument("--max-rounds", type=int, default=MAX_ROUNDS)
+    p.add_argument("--detach", action="store_true")
     return p.parse_args(argv)
 
 
@@ -368,6 +390,13 @@ def run_triage(project, label, runner):
 
 def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibility_guard):
     args = parse_args(argv)
+
+    if args.detach:
+        pid, log_path = _spawn_detached(argv)
+        print(f"Loop started (pid {pid}).")
+        print(f"Watch: tail -f {log_path}")
+        return 0
+
     models = default_models()
     timeouts = default_timeouts()
     efforts = default_efforts()
