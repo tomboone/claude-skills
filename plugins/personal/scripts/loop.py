@@ -242,8 +242,10 @@ def format_summary(results, held):
             line = f"  {r.ticket_id}: FAILED at {r.failed_step} — {r.reason}"
         else:
             pr = r.pr_url or "(no PR)"
-            review = r.review_status or "(no review)"
-            line = f"  {r.ticket_id}: PR {pr} — review {review}"
+            disp = r.disposition or (r.review_status or "(no review)")
+            line = f"  {r.ticket_id}: {disp} — PR {pr} — {r.rounds} round(s)"
+            if r.disposition == "NEEDS_HUMAN" and r.reason:
+                line += f" — {r.reason}"
         if r.usage:
             line += f" — ${_ticket_cost(r):.4f}"
         lines.append(line)

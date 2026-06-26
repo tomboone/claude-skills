@@ -409,6 +409,21 @@ class TestPipelineStateMachine(unittest.TestCase):
         self.assertFalse(any("mergeit" in c[2] for c in runner.calls["cmds"]))
 
 
+class TestSummaryDisposition(unittest.TestCase):
+    def test_shows_disposition_and_rounds(self):
+        r = loop.TicketResult("A-1", True, "https://github.com/o/r/pull/1", "APPROVED",
+                              None, None, None, "MERGED", 2)
+        out = loop.format_summary([r], [])
+        self.assertIn("MERGED", out)
+        self.assertIn("2 round", out)
+    def test_needs_human_reason_shown(self):
+        r = loop.TicketResult("A-2", True, "https://github.com/o/r/pull/2", "CHANGES_REQUESTED",
+                              None, "impasse: ...", None, "NEEDS_HUMAN", 3)
+        out = loop.format_summary([r], [])
+        self.assertIn("NEEDS_HUMAN", out)
+        self.assertIn("impasse", out)
+
+
 class TestFormatSummaryUsage(unittest.TestCase):
     def _rec(self, step, model, cost, inp, out):
         return {
