@@ -35,7 +35,12 @@ step is a no-op. Backwards-compatible.
 
 Derive a branch name from the ticket ID and the plan/spec title: `feat/{TICKET_ID}-short-description` (or `fix/` if the ticket is a bug fix). Use the ticket ID exactly as given — don't assume a project prefix.
 
-Check out the branch from main (or the current release branch if one exists and is the appropriate base — check with the user if ambiguous).
+**Branch from up-to-date `main`.** Sync the base first so each ticket starts from every prior ticket's merged state (fewer downstream conflicts):
+```bash
+git fetch origin main
+git checkout -b feat/{TICKET_ID}-short-description origin/main
+```
+If a release branch is the appropriate base instead (one exists and is the active release), fetch and branch from `origin/<release-branch>` the same way. In headless mode default to `origin/main`; only ask the user if genuinely ambiguous and a user is present.
 
 ## Step 5 — Hand off to Superpowers
 
