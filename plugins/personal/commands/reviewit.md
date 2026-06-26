@@ -13,11 +13,11 @@ Pick the PR whose `headRefName` contains `{TICKET_ID}` (case-insensitive); if no
 
 (If the user passes a bare PR number instead of a ticket ID, use it directly as `PR_NUMBER`.)
 
-## Step 2 — Resolve the docs directory and fetch context
+## Step 2 — Load review context and fetch the live PR state
 
-Determine `DOCS_DIR` (override via `specs_dir` in CLAUDE.md; else `<umbrella>/docs` for umbrella layouts or `<repo-root>/.claude/docs` for single repos). Read the spec for this ticket from `DOCS_DIR/superpowers/specs/` (the file whose name contains `{TICKET_ID}`) if one exists — this is the plan the implementation should be measured against.
+**Ticket intent (cached bundle).** Load-or-generate the review context bundle for `{TICKET_ID}` as defined in `plugins/personal/review-context-convention.md`: if the bundle file exists, read it; otherwise gather the Linear ticket + related/project/milestone context and the spec/plan files, write the bundle, then read it. This is the full intent the implementation should be measured against — not just the spec.
 
-Then:
+**Live PR state.**
 ```bash
 gh pr view PR_NUMBER          # title, body
 gh pr diff PR_NUMBER          # full diff
@@ -48,7 +48,7 @@ HEAD_SHA=$(gh pr view PR_NUMBER --json headRefOid --jq '.headRefOid')
 
 Invoke the `superpowers:requesting-code-review` skill, providing:
 - `WHAT_WAS_IMPLEMENTED`: derived from the PR title and body
-- `PLAN_OR_REQUIREMENTS`: the spec file content if it exists, otherwise the PR body. **If `PRIOR_REVIEW_CONTEXT` is non-empty, append it to this field** under a `## Prior review history` heading — the reviewer template has no dedicated slot, so this is how the history reaches the reviewer.
+- `PLAN_OR_REQUIREMENTS`: the review context bundle from Step 2 (Linear ticket intent + spec/plan); fall back to the PR body only if no bundle context could be gathered. **If `PRIOR_REVIEW_CONTEXT` is non-empty, append it to this field** under a `## Prior review history` heading — the reviewer template has no dedicated slot, so this is how the history reaches the reviewer.
 - `BASE_SHA`: from above
 - `HEAD_SHA`: from above
 - `DESCRIPTION`: one-sentence summary of the change
