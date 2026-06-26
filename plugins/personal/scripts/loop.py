@@ -82,6 +82,8 @@ def parse_merge_status(result_text):
     return None
 
 
+MAX_ROUNDS = 3
+
 _PR_RE = re.compile(r"https://github\.com/[^\s)]+/pull/\d+")
 
 
@@ -128,30 +130,66 @@ def _usage_record(step, model, usage):
     return rec
 
 
-def run_ticket_pipeline(ticket, runner, models, timeouts):
+def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS):
     tid = ticket["id"]
     usages = []
 
-    res = runner(build_claude_cmd(f"/personal:implementit {tid}", models["implementit"]), timeouts["implementit"])
-    usages.append(_usage_record("implementit", models["implementit"], res.usage))
+    def step(name, model, timeout):
+        res = runner(build_claude_cmd(f"/personal:{name} {tid}", model), timeout)
+        usages.append(_usage_record(name, model, res.usage))
+        return res
+
+    def fail(at, reason):
+        return TicketResult(tid, True, pr_url, last_review, at, reason, usages, "FAILED", rounds)
+
+    def stall(reason):
+        return TicketResult(tid, True, pr_url, last_review, None, reason, usages, "NEEDS_HUMAN", rounds)
+
+    pr_url = None
+    last_review = None
+    rounds = 0
+
+    res = step("implementit", models["implementit"], timeouts["implementit"])
     ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "implementit")
     if not ok:
-        return TicketResult(tid, False, None, None, "implementit", reason, usages)
+        return TicketResult(tid, False, None, None, "implementit", reason, usages, "FAILED", 0)
 
-    res = runner(build_claude_cmd(f"/personal:shipit {tid}", models["shipit"]), timeouts["shipit"])
-    usages.append(_usage_record("shipit", models["shipit"], res.usage))
+    res = step("shipit", models["shipit"], timeouts["shipit"])
     ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "shipit")
     if not ok:
-        return TicketResult(tid, True, None, None, "shipit", reason, usages)
+        return TicketResult(tid, True, None, None, "shipit", reason, usages, "FAILED", 0)
     pr_url = shipit_pr_url(res.result_text)
 
-    res = runner(build_claude_cmd(f"/personal:reviewit {tid}", models["reviewit"]), timeouts["reviewit"])
-    usages.append(_usage_record("reviewit", models["reviewit"], res.usage))
-    ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "reviewit")
-    if not ok:
-        return TicketResult(tid, True, pr_url, None, "reviewit", reason, usages)
+    while True:
+        rounds += 1
+        model = models["reviewit"] if rounds == 1 else models["reviewit_rereview"]
+        res = step("reviewit", model, timeouts["reviewit"])
+        if res.timed_out or res.returncode != 0:
+            return fail("reviewit", f"reviewit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
+        last_review = parse_review_status(res.result_text)
+        if last_review == "APPROVED":
+            break
+        if last_review != "CHANGES_REQUESTED":
+            return fail("reviewit", "reviewit emitted no verdict")
 
-    return TicketResult(tid, True, pr_url, parse_review_status(res.result_text), None, None, usages)
+        res = step("addressit", models["addressit"], timeouts["addressit"])
+        if res.timed_out or res.returncode != 0:
+            return fail("addressit", f"addressit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
+        addressed = parse_address_status(res.result_text)
+        if addressed == "PUSHED_BACK":
+            return stall("impasse: reviewer requested changes, addressit pushed back")
+        if addressed == "BLOCKED" or addressed is None:
+            return stall("addressit blocked / emitted no status")
+        if rounds >= max_rounds:
+            return stall(f"max rounds ({max_rounds}) reached without approval")
+        # else ADDRESSED → loop for re-review
+
+    res = step("mergeit", models["mergeit"], timeouts["mergeit"])
+    if res.timed_out or res.returncode != 0:
+        return fail("mergeit", f"mergeit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
+    if parse_merge_status(res.result_text) == "MERGED":
+        return TicketResult(tid, True, pr_url, last_review, None, None, usages, "MERGED", rounds)
+    return stall("merge blocked (CI failed / verdict not ready)")
 
 
 _USAGE_FIELDS = ("cost_usd", "input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
