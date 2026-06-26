@@ -87,8 +87,9 @@ roots on an up-to-date `main` and downstream conflicts shrink.
 For each ticket the loop runs:
 
 ```
-implementit → shipit → ┌─ reviewit ──→ APPROVED ─────────────→ mergeit ─→ MERGED
-                       │     │                                     │
+implementit → shipit → ┌─ reviewit ──→ APPROVED ──[--merge]──→ mergeit ─→ MERGED
+                       │     │                 │                    │
+                       │     │                 └─[no --merge]──→ READY_FOR_REVIEW
                        │     └─ CHANGES_REQUESTED → addressit ─┐   └─ MERGE_BLOCKED → NEEDS_HUMAN
                        │                                       │
                        └──────────── ADDRESSED (re-review) ◀───┘
@@ -98,7 +99,7 @@ implementit → shipit → ┌─ reviewit ──→ APPROVED ──────
 
 - The review ↔ address alternation is **bounded** by `--max-rounds` (default 3). One round =
   one `reviewit` + (if not approved) one `addressit`.
-- A ticket **merges only after an `APPROVED` verdict**.
+- A ticket is merged only after an `APPROVED` verdict **and only when `--merge` is set**; otherwise an APPROVED verdict leaves the PR at `READY_FOR_REVIEW` for a human/team to merge.
 - Any **stall** — an impasse (`PUSHED_BACK`), `addressit` `BLOCKED`, rounds exhausted without
   approval, or `MERGE_BLOCKED` — records the ticket's disposition as `NEEDS_HUMAN` with a reason and
   **continues to the next ticket**. The wave is never stopped by a single stalled ticket.
@@ -115,7 +116,7 @@ Run it from inside the target app's repo (so file reads and git operations resol
 ```bash
 plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
                                  [--tickets ID ...] [--dry-run] [--check] \
-                                 [--limit N] [--notify] [--max-rounds N] [--detach]
+                                 [--limit N] [--notify] [--max-rounds N] [--detach] [--merge]
 ```
 
 | Flag | Effect |
@@ -123,17 +124,20 @@ plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
 | `--project <name>` | Override the project; otherwise inferred from the repo's `linear_initiative:` CLAUDE.md hint. |
 | `--label <name>` | Ready-marker label to triage on (default `loop-ready`). |
 | `--tickets ID …` | Bypass triage with an explicit ticket list. |
-| `--dry-run` | Run read-only triage and print the wave + the exact `claude -p` commands (including the bounded review↔address step and the merge) without executing. |
+| `--dry-run` | Run read-only triage and print the wave + the exact `claude -p` commands (including the bounded review↔address step and the merge/stop step) without executing. |
 | `--check` | Run only the feasibility guard (verifies `claude -p` + Linear/GitHub MCP are reachable). |
 | `--limit N` | Cap the wave size. |
 | `--notify` | Send a single end-of-run notification. |
 | `--max-rounds N` | Cap the review ↔ address rounds per ticket (default 3); exhausting them stalls the ticket as `NEEDS_HUMAN`. |
 | `--detach` | Background the run: re-launch detached, write stdout/stderr to a timestamped `<repo>/.claude/loop/run-*.log` (self-`.gitignore`d), print a `tail -f` watch command, and return immediately. |
+| `--merge` | Run `mergeit` after the review↔address loop reaches APPROVED. **Off by default** — without it the loop stops at the `READY_FOR_REVIEW` disposition (PR opened and loop-approved, left for a human/team to merge). Use it on repos where auto-merge is wanted; omit it where PRs require team approval. |
 
 **Run flow:** feasibility guard → Linear-MCP triage (returns the wave as JSON) → per-ticket state
-machine (implement → ship → review ↔ address until approved or stalled → merge) → a printed summary
-showing each ticket's **disposition** (`MERGED` / `NEEDS_HUMAN` / `FAILED`), **round count**, and a
-**per-step usage/cost breakdown**, plus the held list.
+machine (implement → ship → review ↔ address until approved or stalled → merge/stop) → a printed
+summary showing each ticket's **disposition** (`MERGED` / `READY_FOR_REVIEW` / `NEEDS_HUMAN` /
+`FAILED`), **round count**, and a **per-step usage/cost breakdown**, plus the held list.
+`READY_FOR_REVIEW` means the review↔address loop reached APPROVED and `--merge` was not set — the PR
+is open and ready for the human/team to merge.
 
 ### Models & effort per step
 

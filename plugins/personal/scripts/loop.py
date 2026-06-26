@@ -141,7 +141,7 @@ def _usage_record(step, model, usage):
     return rec
 
 
-def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None, emit=None):
+def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None, emit=None, merge=False):
     tid = ticket["id"]
     usages = []
 
@@ -198,6 +198,9 @@ def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS,
         if rounds >= max_rounds:
             return stall(f"max rounds ({max_rounds}) reached without approval")
         # else ADDRESSED → loop for re-review
+
+    if not merge:
+        return TicketResult(tid, True, pr_url, last_review, None, None, usages, "READY_FOR_REVIEW", rounds)
 
     res = step("mergeit", models["mergeit"], timeouts["mergeit"])
     if res.timed_out or res.returncode != 0:
@@ -320,6 +323,7 @@ def parse_args(argv):
     p.add_argument("--notify", action="store_true")
     p.add_argument("--max-rounds", type=int, default=MAX_ROUNDS)
     p.add_argument("--detach", action="store_true")
+    p.add_argument("--merge", action="store_true")
     return p.parse_args(argv)
 
 
@@ -476,8 +480,11 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
                 print("  would run:", " ".join(cmd))
             print(f"  then loop: reviewit ↔ addressit up to {args.max_rounds} round(s) "
                   f"(re-review model {models['reviewit_rereview']}, effort {efforts.get('reviewit_rereview')})")
-            cmd = build_claude_cmd(f"/personal:mergeit {t['id']}", models["mergeit"], effort=efforts.get("mergeit"))
-            print("  would run:", " ".join(cmd))
+            if args.merge:
+                cmd = build_claude_cmd(f"/personal:mergeit {t['id']}", models["mergeit"], effort=efforts.get("mergeit"))
+                print("  would run:", " ".join(cmd))
+            else:
+                print("  then stop on approval → READY_FOR_REVIEW (merge disabled; pass --merge to auto-merge)")
         print(format_summary([], triage["held"]))
         return 0
 
@@ -488,7 +495,7 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
     results = []
     for i, t in enumerate(wave, 1):
         emit(f"[{i}/{len(wave)}] {t['id']}")
-        r = run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts, emit=emit)
+        r = run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts, emit=emit, merge=args.merge)
         if r.disposition == "NEEDS_HUMAN":
             emit(f"{r.ticket_id} → NEEDS_HUMAN: {r.reason}")
         elif r.failed_step:
