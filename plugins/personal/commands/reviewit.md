@@ -23,6 +23,20 @@ gh pr view PR_NUMBER          # title, body
 gh pr diff PR_NUMBER          # full diff
 ```
 
+### Prior review activity (so this pass builds on earlier rounds)
+
+Fetch any existing review conversation so the reviewer knows what was already raised and how it was resolved — otherwise each `/reviewit` run starts blind and may re-flag findings that were already fixed or deliberately accepted:
+
+```bash
+gh pr view PR_NUMBER --comments                                  # conversation thread, incl. prior `## Code Review` comments this command posted
+gh api repos/{owner}/{repo}/pulls/PR_NUMBER/comments --paginate  # inline (line-level) review-thread comments
+gh api repos/{owner}/{repo}/pulls/PR_NUMBER/reviews  --paginate  # formal review summaries (approve / request-changes)
+```
+
+(`gh api` resolves `{owner}`/`{repo}` from the current repo automatically.)
+
+From these, build `PRIOR_REVIEW_CONTEXT`: a short digest of each previously-raised finding and its apparent current state — focus on the most recent `## Code Review` block this command posted plus any human replies. For each prior item, note whether the thread shows it was **fixed**, **still open**, or **intentionally accepted/deferred** by the user. If there are no prior comments, leave `PRIOR_REVIEW_CONTEXT` empty.
+
 ## Step 3 — Get SHAs
 
 ```bash
@@ -34,10 +48,12 @@ HEAD_SHA=$(gh pr view PR_NUMBER --json headRefOid --jq '.headRefOid')
 
 Invoke the `superpowers:requesting-code-review` skill, providing:
 - `WHAT_WAS_IMPLEMENTED`: derived from the PR title and body
-- `PLAN_OR_REQUIREMENTS`: the spec file content if it exists, otherwise the PR body
+- `PLAN_OR_REQUIREMENTS`: the spec file content if it exists, otherwise the PR body. **If `PRIOR_REVIEW_CONTEXT` is non-empty, append it to this field** under a `## Prior review history` heading — the reviewer template has no dedicated slot, so this is how the history reaches the reviewer.
 - `BASE_SHA`: from above
 - `HEAD_SHA`: from above
 - `DESCRIPTION`: one-sentence summary of the change
+
+When prior review history is present, instruct the reviewer to treat those findings as already-raised: for each, inspect the current diff to confirm whether it is now resolved and note its status (fixed / still open / intentionally deferred) rather than rediscovering it from scratch. Only surface a prior item as a fresh finding if it remains unaddressed, and do **not** re-flag anything the thread shows the user accepted or deferred.
 
 ## Step 5 — Post findings as a PR comment and emit STATUS
 
@@ -64,6 +80,8 @@ Format the comment as (always end with the footer):
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
+
+If prior review history was available, briefly note in the comment which previously-raised items are now resolved (e.g. a short "Previously raised, now fixed" line), so the thread shows how the review evolved across rounds.
 
 **If there are Critical or Important issues:** tell the user what they are and that they should be addressed before merging. Then, as the **very last line of your response**, emit:
 
