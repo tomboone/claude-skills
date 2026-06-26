@@ -411,6 +411,33 @@ class TestMainDryRun(unittest.TestCase):
         self.assertIn("Repo filter: repo:testrepo", buf.getvalue())
 
 
+class TestMainDryRunMergeToggle(unittest.TestCase):
+    def _run(self, argv):
+        import io
+        import contextlib
+        wave = {"project": "p", "wave": [{"id": "A-1", "title": "t"}], "held": []}
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = loop.main(
+                argv,
+                runner=lambda cmd, timeout: loop.InvocationResult(0, "", False),
+                triage_fn=lambda project, label, repo_label, runner: wave,
+                guard_fn=lambda runner: (True, "ok"),
+            )
+        return rc, buf.getvalue()
+
+    def test_dry_run_default_omits_mergeit(self):
+        rc, out = self._run(["--project", "p", "--repo", "r", "--dry-run"])
+        self.assertEqual(rc, 0)
+        self.assertNotIn("/personal:mergeit", out)
+        self.assertIn("READY_FOR_REVIEW", out)
+
+    def test_dry_run_merge_includes_mergeit(self):
+        rc, out = self._run(["--project", "p", "--repo", "r", "--merge", "--dry-run"])
+        self.assertEqual(rc, 0)
+        self.assertIn("/personal:mergeit", out)
+
+
 class TestTicketsPathNoRepoResolve(unittest.TestCase):
     def test_tickets_path_does_not_call_resolve_repo_label(self):
         import unittest.mock
