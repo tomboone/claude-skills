@@ -8,7 +8,22 @@ import sys
 from collections import namedtuple
 
 InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out", "usage"], defaults=[None])
-TicketResult = namedtuple("TicketResult", ["ticket_id", "implemented", "pr_url", "review_status", "failed_step", "reason", "usage"], defaults=[None])
+TicketResult = namedtuple(
+    "TicketResult",
+    ["ticket_id", "implemented", "pr_url", "review_status", "failed_step", "reason", "usage", "disposition", "rounds"],
+    defaults=[None, None, 0],
+)
+
+
+def default_models():
+    return {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "opus",
+            "reviewit_rereview": "sonnet", "addressit": "sonnet", "mergeit": "haiku",
+            "triage": "sonnet", "guard": "haiku"}
+
+
+def default_timeouts():
+    return {"implementit": 1800, "shipit": 600, "reviewit": 900,
+            "addressit": 1800, "mergeit": 1200}
 
 
 def parse_triage_result(result_text):
@@ -299,8 +314,8 @@ def run_triage(project, label, runner):
 
 def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibility_guard):
     args = parse_args(argv)
-    models = {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "opus"}
-    timeouts = {"implementit": 1800, "shipit": 600, "reviewit": 900}
+    models = default_models()
+    timeouts = default_timeouts()
 
     ok, msg = guard_fn(runner)
     if not ok:

@@ -150,8 +150,19 @@ class TestFormatSummary(unittest.TestCase):
         self.assertIn("no", out.lower())      # e.g. "no tickets processed"
 
 
-MODELS = {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "opus"}
-TIMEOUTS = {"implementit": 1800, "shipit": 600, "reviewit": 900}
+class TestTicketResultShape(unittest.TestCase):
+    def test_disposition_and_rounds_default(self):
+        r = loop.TicketResult("A-1", True, None, None, None, None)  # 6-arg legacy
+        self.assertIsNone(r.disposition)
+        self.assertEqual(r.rounds, 0)
+    def test_main_models_have_loop_keys(self):
+        models = loop.default_models()
+        for k in ("reviewit_rereview", "addressit", "mergeit"):
+            self.assertIn(k, models)
+
+
+MODELS = loop.default_models()
+TIMEOUTS = loop.default_timeouts()
 
 
 def make_runner(scripted):
