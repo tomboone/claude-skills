@@ -275,9 +275,12 @@ def format_summary(results, held):
 
 TRIAGE_PROMPT = (
     "Using the Linear MCP, find work tickets in project {project!r} that are ready for the "
-    "implementation loop: they carry the {label!r} label, every one of their blockedBy blockers "
-    "has status Done, and the ticket itself is still un-started (status Todo or Backlog, not "
-    "In Progress/In Review/Done). Return ONLY a JSON object as your final message, no prose:\n"
+    "implementation loop. A ticket qualifies only if ALL hold: it carries BOTH the {label!r} "
+    "label AND the {repo_label!r} label; every one of its blockedBy blockers has status Done; "
+    "and the ticket itself is still un-started (status Todo or Backlog, not In Progress/In "
+    "Review/Done). EXCLUDE any issue that has sub-issues (children) or carries the 'user-story' "
+    "label — those are containers, not implementable work. Return ONLY a JSON object as your "
+    "final message, no prose:\n"
     '{{"project": "{project}", "wave": [{{"id": "...", "title": "..."}}], '
     '"held": [{{"id": "...", "title": "...", "waiting_on": ["..."]}}]}}'
 )
@@ -425,8 +428,9 @@ def feasibility_guard(runner):
     return (True, "ok")
 
 
-def run_triage(project, label, runner):
-    res = runner(build_claude_cmd(TRIAGE_PROMPT.format(project=project, label=label), "sonnet"), 300)
+def run_triage(project, label, repo_label, runner):
+    res = runner(build_claude_cmd(
+        TRIAGE_PROMPT.format(project=project, label=label, repo_label=repo_label), "sonnet"), 300)
     if res.timed_out or res.returncode != 0:
         raise SystemExit("Triage call failed.")
     return parse_triage_result(res.result_text)

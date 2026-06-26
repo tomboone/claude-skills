@@ -359,6 +359,19 @@ class TestResolveRepoLabel(unittest.TestCase):
             loop.resolve_repo_label(args, read_claude_md=lambda: "", remote_url_fn=lambda: None)
 
 
+class TestTriagePrompt(unittest.TestCase):
+    def test_prompt_includes_repo_and_parent_guard(self):
+        rendered = loop.TRIAGE_PROMPT.format(project="P", label="loop-ready", repo_label="repo:backend")
+        self.assertIn("repo:backend", rendered)
+        self.assertIn("loop-ready", rendered)
+        # parent / user-story exclusion must be present
+        self.assertIn("sub-issues", rendered)
+        self.assertIn("user-story", rendered)
+        # JSON contract is unchanged
+        self.assertIn('"wave"', rendered)
+        self.assertIn('"held"', rendered)
+
+
 class TestSubprocessRunnerParsing(unittest.TestCase):
     def test_extracts_result_field(self):
         # _result_from_stdout is the pure JSON-extraction half of subprocess_runner
