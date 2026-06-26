@@ -326,6 +326,39 @@ class TestRepoNameFromUrl(unittest.TestCase):
         self.assertIsNone(loop._repo_name_from_url(None))
 
 
+class TestRepoArg(unittest.TestCase):
+    def test_flag_parsed(self):
+        self.assertEqual(loop.parse_args(["--repo", "myrepo"]).repo, "myrepo")
+
+    def test_default_none(self):
+        self.assertIsNone(loop.parse_args([]).repo)
+
+
+class TestResolveRepoLabel(unittest.TestCase):
+    def test_explicit_flag_wins(self):
+        args = loop.parse_args(["--repo", "backend"])
+        label = loop.resolve_repo_label(args, read_claude_md=lambda: "linear_repo: other\n",
+                                        remote_url_fn=lambda: "git@github.com:o/remote-repo.git")
+        self.assertEqual(label, "repo:backend")
+
+    def test_claude_md_hint_second(self):
+        args = loop.parse_args([])
+        label = loop.resolve_repo_label(args, read_claude_md=lambda: "linear_initiative: X\nlinear_repo: bi-api\n",
+                                        remote_url_fn=lambda: "git@github.com:o/remote-repo.git")
+        self.assertEqual(label, "repo:bi-api")
+
+    def test_git_remote_fallback(self):
+        args = loop.parse_args([])
+        label = loop.resolve_repo_label(args, read_claude_md=lambda: "",
+                                        remote_url_fn=lambda: "https://github.com/o/report-exporters.git")
+        self.assertEqual(label, "repo:report-exporters")
+
+    def test_aborts_when_unresolvable(self):
+        args = loop.parse_args([])
+        with self.assertRaises(SystemExit):
+            loop.resolve_repo_label(args, read_claude_md=lambda: "", remote_url_fn=lambda: None)
+
+
 class TestSubprocessRunnerParsing(unittest.TestCase):
     def test_extracts_result_field(self):
         # _result_from_stdout is the pure JSON-extraction half of subprocess_runner

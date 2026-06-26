@@ -308,6 +308,7 @@ def _spawn_detached(argv):
 def parse_args(argv):
     p = argparse.ArgumentParser(description="Run one wave of loop-ready tickets through implement/ship/review<->address/merge.")
     p.add_argument("--project")
+    p.add_argument("--repo")
     p.add_argument("--label", default="loop-ready")
     p.add_argument("--tickets", nargs="*")
     p.add_argument("--dry-run", action="store_true")
@@ -376,6 +377,34 @@ def _repo_name_from_url(url):
     # scp-style uses ':' before the path; normalize it to '/' then take the last segment
     last = s.replace(":", "/").rstrip("/").split("/")[-1]
     return last or None
+
+
+def _git_remote_url():
+    """origin remote URL via git, or None if unavailable (no repo / no remote / git missing)."""
+    try:
+        proc = subprocess.run(["git", "remote", "get-url", "origin"],
+                              capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def resolve_repo_label(args, read_claude_md=_read_repo_claude_md, remote_url_fn=_git_remote_url):
+    """Resolve this repo's loop label as 'repo:<name>'. --repo > linear_repo: hint > git remote."""
+    name = args.repo
+    if name is None:
+        for line in read_claude_md().splitlines():
+            if line.strip().lower().startswith("linear_repo:"):
+                name = line.split(":", 1)[1].strip()
+                break
+    if name is None:
+        name = _repo_name_from_url(remote_url_fn())
+    if not name:
+        raise SystemExit(
+            "Cannot resolve repo: pass --repo, set 'linear_repo:' in the repo CLAUDE.md, "
+            "or run from a repo with an 'origin' git remote."
+        )
+    return f"repo:{name}"
 
 
 def resolve_project(args, read_claude_md=_read_repo_claude_md):
