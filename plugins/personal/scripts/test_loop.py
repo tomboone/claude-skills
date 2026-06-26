@@ -294,6 +294,14 @@ class TestMaxRoundsArg(unittest.TestCase):
         self.assertEqual(loop.parse_args([]).max_rounds, loop.MAX_ROUNDS)
 
 
+class TestMergeArg(unittest.TestCase):
+    def test_flag_parsed(self):
+        self.assertTrue(loop.parse_args(["--merge"]).merge)
+
+    def test_default_false(self):
+        self.assertFalse(loop.parse_args([]).merge)
+
+
 class TestResolveProject(unittest.TestCase):
     def test_explicit_flag_wins(self):
         args = loop.parse_args(["--project", "myproj"])

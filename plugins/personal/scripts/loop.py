@@ -320,6 +320,7 @@ def parse_args(argv):
     p.add_argument("--notify", action="store_true")
     p.add_argument("--max-rounds", type=int, default=MAX_ROUNDS)
     p.add_argument("--detach", action="store_true")
+    p.add_argument("--merge", action="store_true")
     return p.parse_args(argv)
 
 
