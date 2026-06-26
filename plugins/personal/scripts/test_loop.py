@@ -93,8 +93,19 @@ class TestClassifyOutcome(unittest.TestCase):
         ok, _ = loop.classify_outcome(0, "https://github.com/o/r/pull/1", False, "shipit")
         self.assertTrue(ok)
 
-    def test_implementit_zero_exit_is_ok(self):
-        ok, _ = loop.classify_outcome(0, "done", False, "implementit")
+    def test_implementit_without_completion_sentinel_is_hard_fail(self):
+        # exit 0 alone is not enough — implementit bails with code 0 (e.g. no plan found)
+        ok, reason = loop.classify_outcome(0, "done", False, "implementit")
+        self.assertFalse(ok)
+        self.assertIn("did not complete", reason)
+
+    def test_implementit_no_plan_sentinel_gives_clear_reason(self):
+        ok, reason = loop.classify_outcome(0, "...\nSTATUS: NO_PLAN", False, "implementit")
+        self.assertFalse(ok)
+        self.assertIn("planit", reason.lower())
+
+    def test_implementit_with_completion_sentinel_is_ok(self):
+        ok, _ = loop.classify_outcome(0, "all tasks done\nSTATUS: IMPLEMENTED", False, "implementit")
         self.assertTrue(ok)
 
 
@@ -137,7 +148,7 @@ def make_runner(scripted):
 class TestRunTicketPipeline(unittest.TestCase):
     def test_all_steps_succeed(self):
         runner = make_runner([
-            loop.InvocationResult(0, "implemented", False),
+            loop.InvocationResult(0, "implemented\nSTATUS: IMPLEMENTED", False),
             loop.InvocationResult(0, "PR https://github.com/o/r/pull/7", False),
             loop.InvocationResult(0, "review done\nSTATUS: APPROVED", False),
         ])
@@ -155,9 +166,17 @@ class TestRunTicketPipeline(unittest.TestCase):
         self.assertEqual(r.failed_step, "implementit")
         self.assertEqual(len(runner.calls["cmds"]), 1)   # ship/review never run
 
+    def test_implement_noop_without_sentinel_skips_rest(self):
+        # exit 0 but no STATUS: IMPLEMENTED — e.g. implementit found no plan and bailed
+        runner = make_runner([loop.InvocationResult(0, "no plan; run planit\nSTATUS: NO_PLAN", False)])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
+        self.assertFalse(r.implemented)
+        self.assertEqual(r.failed_step, "implementit")
+        self.assertEqual(len(runner.calls["cmds"]), 1)   # ship/review never run
+
     def test_ship_failure_skips_review(self):
         runner = make_runner([
-            loop.InvocationResult(0, "implemented", False),
+            loop.InvocationResult(0, "implemented\nSTATUS: IMPLEMENTED", False),
             loop.InvocationResult(0, "no pr produced", False),
         ])
         r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS)
@@ -168,7 +187,7 @@ class TestRunTicketPipeline(unittest.TestCase):
 
     def test_changes_requested_is_not_a_failure(self):
         runner = make_runner([
-            loop.InvocationResult(0, "implemented", False),
+            loop.InvocationResult(0, "implemented\nSTATUS: IMPLEMENTED", False),
             loop.InvocationResult(0, "PR https://github.com/o/r/pull/8", False),
             loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
         ])
@@ -179,7 +198,7 @@ class TestRunTicketPipeline(unittest.TestCase):
 
     def test_uses_correct_models(self):
         runner = make_runner([
-            loop.InvocationResult(0, "x", False),
+            loop.InvocationResult(0, "x\nSTATUS: IMPLEMENTED", False),
             loop.InvocationResult(0, "https://github.com/o/r/pull/9", False),
             loop.InvocationResult(0, "STATUS: APPROVED", False),
         ])

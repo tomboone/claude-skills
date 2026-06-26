@@ -1,4 +1,4 @@
-# Commit any uncommitted work, push the branch, and open a PR against the release branch.
+# Commit any uncommitted work, push the branch, and open a PR against the release branch (or the repo's default branch when there is none).
 # Usage: /personal:shipit {TICKET_ID}
 
 ## Step 1 — Guard rails
@@ -29,9 +29,15 @@ If uncommitted changes exist:
 
 Push the current branch to origin if it isn't already up to date.
 
-## Step 5 — Identify the release branch
+## Step 5 — Identify the base branch
 
-Look for a branch matching `release/v*`. If more than one exists, ask the user which to target. If none exists, ask the user what the PR base branch should be. Call it `BASE`.
+Resolve the PR base, `BASE`, **without blocking on a question when a sane default exists** — this command runs headlessly under the loop orchestrator, so a prompt to the user hangs the run and produces no PR:
+
+1. Look for branches matching `release/v*` (`git branch --list 'release/v*'`).
+   - **Exactly one** → that's `BASE`.
+   - **More than one** → take the highest version: `git branch --list 'release/v*' | sed 's/^[* ]*//' | sort -V | tail -1`. (Only ask the user if one is genuinely present and the ordering is ambiguous.)
+2. **No `release/v*` branch** → fall back to the repo's default branch (normally `main`): `git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'`, or if that's unset, `git remote show origin | sed -n 's/.*HEAD branch: //p'`. Use that as `BASE`.
+3. Only ask the user if **none** of the above resolves a branch *and* a user is present to answer; in headless mode, default to `main`.
 
 ## Step 6 — Build the PR description
 
