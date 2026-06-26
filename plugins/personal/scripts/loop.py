@@ -64,11 +64,23 @@ def shipit_pr_url(result_text):
     return m.group(0) if m else None
 
 
+def implementit_complete(result_text):
+    """True when /implementit signalled it actually executed the plan to completion."""
+    return "STATUS: IMPLEMENTED" in (result_text or "")
+
+
 def classify_outcome(returncode, result_text, timed_out, step):
     if timed_out:
         return (False, f"{step} timed out")
     if returncode != 0:
         return (False, f"{step} exited {returncode}")
+    if step == "implementit" and not implementit_complete(result_text):
+        # A zero exit is not enough: /implementit exits 0 even when it bails early
+        # (e.g. no plan found). Require the explicit completion sentinel so a no-op
+        # implement step doesn't march on to /shipit and report a false success.
+        if "STATUS: NO_PLAN" in (result_text or ""):
+            return (False, "implementit found no plan/spec (run planit first)")
+        return (False, "implementit did not complete (no STATUS: IMPLEMENTED)")
     if step == "shipit" and shipit_pr_url(result_text) is None:
         return (False, "shipit produced no PR URL")
     return (True, "")
