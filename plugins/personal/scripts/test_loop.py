@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import sys
 import unittest
@@ -384,7 +386,6 @@ class TestSubprocessRunnerParsing(unittest.TestCase):
 
 class TestMainDryRun(unittest.TestCase):
     def test_dry_run_prints_commands_without_running_pipeline(self):
-        import io, contextlib
         wave = {"project": "p", "wave": [{"id": "A-1", "title": "t"}], "held": []}
         calls = []
         buf = io.StringIO()
@@ -400,6 +401,22 @@ class TestMainDryRun(unittest.TestCase):
         self.assertEqual(calls, [])
         # the resolved repo filter is surfaced:
         self.assertIn("Repo filter: repo:testrepo", buf.getvalue())
+
+
+class TestTicketsPathNoRepoResolve(unittest.TestCase):
+    def test_tickets_path_does_not_call_resolve_repo_label(self):
+        import unittest.mock
+        # Make resolve_repo_label raise SystemExit — it must never be reached on --tickets path.
+        with unittest.mock.patch("loop.resolve_repo_label", side_effect=SystemExit("should not be called")):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = loop.main(
+                    ["--project", "p", "--tickets", "A-1", "--dry-run"],
+                    runner=lambda cmd, timeout: loop.InvocationResult(0, "", False),
+                    guard_fn=lambda runner: (True, "ok"),
+                )
+        self.assertEqual(rc, 0)
+        self.assertIn("(none — explicit tickets)", buf.getvalue())
 
 
 class TestUsageFromStdout(unittest.TestCase):

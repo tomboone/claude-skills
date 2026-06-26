@@ -458,16 +458,18 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
         return 0
 
     project = resolve_project(args)
-    repo_label = resolve_repo_label(args)
     if args.tickets:
         triage = {"project": project, "wave": [{"id": t, "title": ""} for t in args.tickets], "held": []}
+        repo_label = None
     else:
+        repo_label = resolve_repo_label(args)
         triage = triage_fn(project, args.label, repo_label, runner)
 
     wave = triage["wave"][: args.limit] if args.limit else triage["wave"]
 
     if args.dry_run:
-        print(f"Project: {project}. Repo filter: {repo_label}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
+        filt = repo_label if repo_label else "(none — explicit tickets)"
+        print(f"Project: {project}. Repo filter: {filt}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
         for t in wave:
             for step_name in ("implementit", "shipit", "reviewit"):
                 cmd = build_claude_cmd(f"/personal:{step_name} {t['id']}", models[step_name], effort=efforts.get(step_name))
