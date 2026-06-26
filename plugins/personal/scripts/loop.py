@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless orchestrator: runs /implementit -> /shipit -> /reviewit per loop-ready ticket."""
+"""Headless orchestrator: drives /implementit -> /shipit -> (/reviewit <-> /addressit)* -> /mergeit per loop-ready ticket."""
 import argparse
 import json
 import os
@@ -306,7 +306,7 @@ def _spawn_detached(argv):
 
 
 def parse_args(argv):
-    p = argparse.ArgumentParser(description="Run one wave of loop-ready tickets through implement/ship/review.")
+    p = argparse.ArgumentParser(description="Run one wave of loop-ready tickets through implement/ship/review<->address/merge.")
     p.add_argument("--project")
     p.add_argument("--label", default="loop-ready")
     p.add_argument("--tickets", nargs="*")
