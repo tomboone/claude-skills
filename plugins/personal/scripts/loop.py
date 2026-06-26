@@ -366,6 +366,18 @@ def _read_repo_claude_md():
     return ""
 
 
+def _repo_name_from_url(url):
+    """Canonical repo name (basename, no .git) from an origin remote URL; None if unparseable."""
+    s = (url or "").strip().rstrip("/")
+    if not s:
+        return None
+    if s.endswith(".git"):
+        s = s[:-4]
+    # scp-style uses ':' before the path; normalize it to '/' then take the last segment
+    last = s.replace(":", "/").rstrip("/").split("/")[-1]
+    return last or None
+
+
 def resolve_project(args, read_claude_md=_read_repo_claude_md):
     if args.project:
         return args.project

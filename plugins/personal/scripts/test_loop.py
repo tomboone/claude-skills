@@ -308,6 +308,24 @@ class TestResolveProject(unittest.TestCase):
             loop.resolve_project(args, lambda: "no hints here")
 
 
+class TestRepoNameFromUrl(unittest.TestCase):
+    def test_ssh_remote(self):
+        self.assertEqual(loop._repo_name_from_url("git@github.com:tomboone/claude-skills.git"), "claude-skills")
+
+    def test_https_remote(self):
+        self.assertEqual(loop._repo_name_from_url("https://github.com/org/report-exporters.git"), "report-exporters")
+
+    def test_without_git_suffix(self):
+        self.assertEqual(loop._repo_name_from_url("https://github.com/org/report-exporters"), "report-exporters")
+
+    def test_trailing_slash(self):
+        self.assertEqual(loop._repo_name_from_url("https://github.com/org/report-exporters/"), "report-exporters")
+
+    def test_empty_or_none(self):
+        self.assertIsNone(loop._repo_name_from_url(""))
+        self.assertIsNone(loop._repo_name_from_url(None))
+
+
 class TestSubprocessRunnerParsing(unittest.TestCase):
     def test_extracts_result_field(self):
         # _result_from_stdout is the pure JSON-extraction half of subprocess_runner
