@@ -19,7 +19,7 @@ Look for a plan file whose name contains `{TICKET_ID}` (case-insensitive) in **b
 - If exactly one match is found across both, proceed with it.
 - If multiple match, list them and ask the user which to use.
 - If none match, check for a spec file containing `{TICKET_ID}` in `DOCS_DIR/superpowers/specs/` **and** `DOCS_DIR/specs/` — a spec without a separate plan is acceptable input.
-- If nothing is found in either location, stop and tell the user to run `/personal:planit {TICKET_ID}` first.
+- If nothing is found in either location, stop and tell the user to run `/personal:planit {TICKET_ID}` first. Then, as the **very last line of your response**, emit `STATUS: NO_PLAN` so the headless loop orchestrator records this ticket as *not implemented* instead of marching on to `/personal:shipit`.
 
 ## Step 3 — Load the milestone spec (if the plan references one)
 
@@ -46,3 +46,5 @@ Let Superpowers run its full subagent-driven execution from here — fresh subag
 **Stop after that final whole-branch review. Do NOT transition into `superpowers:finishing-a-development-branch`** (the built-in last node of `subagent-driven-development`) and do not present its numbered finishing options. Branch finishing in this workflow is owned by `/personal:shipit` → `/personal:reviewit` → `/personal:mergeit`, not by Superpowers.
 
 Do not implement anything yourself. Do not invoke `/personal:shipit`. When the final review is done, tell the user to clear context and run `/personal:shipit {TICKET_ID}` when ready.
+
+**Completion signal.** Only after the final whole-branch review has actually run, emit — as the **very last line of your response** — `STATUS: IMPLEMENTED`. This is how the headless loop orchestrator (`loop.py`) confirms the plan was executed; if you stopped early for any reason (no plan, ambiguous input, an error), do **not** emit it.
