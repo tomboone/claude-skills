@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 from collections import namedtuple
+from datetime import datetime, timezone
 
 InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out", "usage"], defaults=[None])
 TicketResult = namedtuple(
@@ -139,11 +140,13 @@ def _usage_record(step, model, usage):
     return rec
 
 
-def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None):
+def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None, emit=None):
     tid = ticket["id"]
     usages = []
 
-    def step(name, model, timeout):
+    def step(name, model, timeout, label=None):
+        if emit:
+            emit(label or name)
         effort = (efforts or {}).get(name)
         res = runner(build_claude_cmd(f"/personal:{name} {tid}", model, effort=effort), timeout)
         usages.append(_usage_record(name, model, res.usage))
@@ -173,7 +176,7 @@ def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS,
     while True:
         rounds += 1
         model = models["reviewit"] if rounds == 1 else models["reviewit_rereview"]
-        res = step("reviewit", model, timeouts["reviewit"])
+        res = step("reviewit", model, timeouts["reviewit"], label=f"reviewit (round {rounds})")
         if res.timed_out or res.returncode != 0:
             return fail("reviewit", f"reviewit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
         last_review = parse_review_status(res.result_text)
@@ -182,7 +185,7 @@ def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS,
         if last_review != "CHANGES_REQUESTED":
             return fail("reviewit", "reviewit emitted no verdict")
 
-        res = step("addressit", models["addressit"], timeouts["addressit"])
+        res = step("addressit", models["addressit"], timeouts["addressit"], label=f"addressit (round {rounds})")
         if res.timed_out or res.returncode != 0:
             return fail("addressit", f"addressit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
         addressed = parse_address_status(res.result_text)
@@ -399,7 +402,21 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
         print(format_summary([], triage["held"]))
         return 0
 
-    results = [run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts) for t in wave]
+    def emit(msg):
+        print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] {msg}", flush=True)
+
+    emit(f"wave: {len(wave)} ticket(s)")
+    results = []
+    for i, t in enumerate(wave, 1):
+        emit(f"[{i}/{len(wave)}] {t['id']}")
+        r = run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts, emit=emit)
+        if r.disposition == "NEEDS_HUMAN":
+            emit(f"{r.ticket_id} → NEEDS_HUMAN: {r.reason}")
+        elif r.failed_step:
+            emit(f"{r.ticket_id} → FAILED at {r.failed_step}")
+        else:
+            emit(f"{r.ticket_id} → {r.disposition}")
+        results.append(r)
     print(format_summary(results, triage["held"]))
     return 0
 

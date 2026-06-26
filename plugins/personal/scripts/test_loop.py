@@ -435,6 +435,23 @@ class TestPipelineStateMachine(unittest.TestCase):
         self.assertFalse(any("mergeit" in c[2] for c in runner.calls["cmds"]))
 
 
+class TestProgressEvents(unittest.TestCase):
+    def test_pipeline_emits_step_labels(self):
+        seen = []
+        runner = make_runner([
+            loop.InvocationResult(0, "STATUS: IMPLEMENTED", False),
+            loop.InvocationResult(0, "PR https://github.com/o/r/pull/1", False),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: ADDRESSED", False),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+            loop.InvocationResult(0, "STATUS: MERGED", False),
+        ])
+        loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS, emit=seen.append)
+        for label in ("implementit", "shipit", "reviewit (round 1)",
+                      "addressit (round 1)", "reviewit (round 2)", "mergeit"):
+            self.assertIn(label, seen)
+
+
 class TestSummaryDisposition(unittest.TestCase):
     def test_shows_disposition_and_rounds(self):
         r = loop.TicketResult("A-1", True, "https://github.com/o/r/pull/1", "APPROVED",
