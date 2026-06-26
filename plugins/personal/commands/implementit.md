@@ -12,11 +12,13 @@ Determine `DOCS_DIR` (must resolve the same on every machine):
 
 ## Step 2 — Locate the plan file
 
-Look in `DOCS_DIR/superpowers/plans/` for a plan file whose name contains `{TICKET_ID}` (case-insensitive).
+Look for a plan file whose name contains `{TICKET_ID}` (case-insensitive) in **both** supported layouts:
+- `DOCS_DIR/superpowers/plans/` — the spec-storage convention.
+- `DOCS_DIR/plans/` — the flat layout (some projects store plans directly under `docs/`).
 
-- If exactly one match is found, proceed with it.
+- If exactly one match is found across both, proceed with it.
 - If multiple match, list them and ask the user which to use.
-- If none match, check `DOCS_DIR/superpowers/specs/` for a spec file containing `{TICKET_ID}` — a spec without a separate plan is acceptable input.
+- If none match, check for a spec file containing `{TICKET_ID}` in `DOCS_DIR/superpowers/specs/` **and** `DOCS_DIR/specs/` — a spec without a separate plan is acceptable input.
 - If nothing is found in either location, stop and tell the user to run `/personal:planit {TICKET_ID}` first.
 
 ## Step 3 — Load the milestone spec (if the plan references one)
