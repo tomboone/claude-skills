@@ -255,6 +255,42 @@ class TestRunTicketPipeline(unittest.TestCase):
         self.assertEqual(r.pr_url, "https://github.com/o/r/pull/8")
         self.assertEqual(r.disposition, "MERGED")
 
+    def test_final_review_after_last_addressit_can_approve(self):
+        # Regression: a fix on the LAST allowed round must still get a confirming review.
+        # max_rounds=1: review(CHANGES) -> address -> review(APPROVED) -> READY_FOR_REVIEW.
+        runner = make_runner([
+            loop.InvocationResult(0, "implemented\nSTATUS: IMPLEMENTED", False),
+            loop.InvocationResult(0, "PR https://github.com/o/r/pull/10", False),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
+            loop.InvocationResult(0, "STATUS: ADDRESSED", False),
+            loop.InvocationResult(0, "STATUS: APPROVED", False),
+        ])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS, max_rounds=1)
+        self.assertIsNone(r.failed_step)
+        self.assertEqual(r.review_status, "APPROVED")
+        self.assertEqual(r.disposition, "READY_FOR_REVIEW")
+        self.assertEqual(len(runner.calls["cmds"]), 5)  # impl, ship, review, address, confirming review
+
+    def test_stall_after_max_rounds_includes_final_review(self):
+        # Never approves: max_rounds=2 -> 2 addressits AND a final (3rd) confirming review, then stall.
+        runner = make_runner([
+            loop.InvocationResult(0, "implemented\nSTATUS: IMPLEMENTED", False),
+            loop.InvocationResult(0, "PR https://github.com/o/r/pull/11", False),
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),  # review r1
+            loop.InvocationResult(0, "STATUS: ADDRESSED", False),          # address r1
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),  # review r2
+            loop.InvocationResult(0, "STATUS: ADDRESSED", False),          # address r2
+            loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),  # review r3 (final) -> stall
+        ])
+        r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS, max_rounds=2)
+        self.assertEqual(r.disposition, "NEEDS_HUMAN")
+        self.assertIn("max rounds (2)", r.reason)
+        self.assertEqual(len(runner.calls["cmds"]), 7)  # impl, ship, rev, addr, rev, addr, rev
+        reviews = [c for c in runner.calls["cmds"] if "/personal:reviewit" in c[2]]
+        addresses = [c for c in runner.calls["cmds"] if "/personal:addressit" in c[2]]
+        self.assertEqual(len(reviews), 3)    # max_rounds + 1 (confirming review)
+        self.assertEqual(len(addresses), 2)  # max_rounds
+
     def test_uses_correct_models(self):
         runner = make_runner([
             loop.InvocationResult(0, "x\nSTATUS: IMPLEMENTED", False),
@@ -542,12 +578,15 @@ class TestPipelineStateMachine(unittest.TestCase):
 
     def test_rounds_exhausted_stalls(self):
         seq = [self._impl(), self._ship()]
-        for _ in range(3):  # MAX_ROUNDS=3: review CHANGES + address ADDRESSED, three times
+        for _ in range(3):  # max_rounds=3: review CHANGES + address ADDRESSED, three times
             seq += [loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False),
                     loop.InvocationResult(0, "STATUS: ADDRESSED", False)]
+        # the 3rd addressit still gets a confirming re-review; it too returns CHANGES -> stall
+        seq += [loop.InvocationResult(0, "STATUS: CHANGES_REQUESTED", False)]
         r = loop.run_ticket_pipeline({"id": "A-1"}, make_runner(seq), MODELS, TIMEOUTS, max_rounds=3)
         self.assertEqual(r.disposition, "NEEDS_HUMAN")
-        self.assertEqual(r.rounds, 3)
+        self.assertIn("max rounds (3)", r.reason)
+        self.assertEqual(r.rounds, 4)  # 3 address rounds + 1 confirming review
 
     def test_addressit_blocked_stalls(self):
         runner = make_runner([self._impl(), self._ship(),
