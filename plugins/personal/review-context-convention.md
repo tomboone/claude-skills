@@ -18,8 +18,9 @@ The `<TICKET_ID>` in the filename keeps bundles for different tickets from colli
 Gather once, via the Linear MCP and the local spec/plan files, and write under clear headings:
 
 - **Linear ticket:** id, title, description, current state.
-- **Linear hierarchy & relations:** the ticket's project, its milestone, its parent and sub-issues, and its `blockedBy` / `blocks` / related issues (id + title + state for each).
 - **Spec & plan:** the spec file and the plan file whose names contain `<TICKET_ID>`, searched in BOTH layouts (`<DOCS_DIR>/superpowers/{specs,plans}/` and the flat `<DOCS_DIR>/{specs,plans}/`). If the plan references a milestone spec (a line beginning `**Milestone spec:** `), include that too.
+
+The spec/plan (plus any referenced milestone spec) are the authoritative statement of intent; the ticket description supplies the "why." **Deliberately excluded:** the Linear hierarchy/relations graph (project, milestone object, parent/sub-issues, `blockedBy` / `blocks` / related issues). It rarely informs a code review, yet it is re-read and re-cached on every step (`/reviewit`, `/addressit`) and every round — keeping it out is a direct cache-write saving. Pull a specific relation back in only if a concrete ticket genuinely needs it.
 
 This is reference context — not the live diff.
 

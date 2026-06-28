@@ -20,7 +20,7 @@ TicketResult = namedtuple(
 
 
 def default_models():
-    return {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "opus",
+    return {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "sonnet",
             "reviewit_rereview": "sonnet", "addressit": "sonnet", "mergeit": "haiku",
             "triage": "sonnet", "guard": "haiku"}
 
@@ -31,7 +31,7 @@ def default_timeouts():
 
 
 def default_efforts():
-    return {"implementit": "high", "shipit": "low", "reviewit": "high",
+    return {"implementit": "high", "shipit": "low", "reviewit": "medium",
             "reviewit_rereview": "medium", "addressit": "medium", "mergeit": "low",
             "triage": "medium", "guard": "low"}
 
@@ -92,7 +92,7 @@ def parse_merge_status(result_text):
     return None
 
 
-MAX_ROUNDS = 3
+MAX_ROUNDS = 2
 
 _PR_RE = re.compile(r"https://github\.com/[^\s)]+/pull/\d+")
 
@@ -249,7 +249,7 @@ def _format_usage_lines(results):
         return []
     def row(label, a):
         return (f"  {label}: ${a['cost_usd']:.4f}  {a['input_tokens']} in / {a['output_tokens']} out"
-                f"  (cache read {a['cache_read_input_tokens']})")
+                f"  (cache write {a['cache_creation_input_tokens']}, read {a['cache_read_input_tokens']})")
     lines = ["Usage by step:"]
     ordered = [s for s in _STEP_ORDER if s in by_step] + [s for s in by_step if s not in _STEP_ORDER]
     for step in ordered:

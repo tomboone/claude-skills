@@ -17,17 +17,15 @@ gh pr diff PR_NUMBER          # full diff
 
 ### Prior review activity (so this pass builds on earlier rounds)
 
-Fetch any existing review conversation so the reviewer knows what was already raised and how it was resolved — otherwise each `/reviewit` run starts blind and may re-flag findings that were already fixed or deliberately accepted:
+Fetch the prior review conversation so the reviewer knows what was already raised and how it was resolved — otherwise each `/reviewit` run starts blind and may re-flag findings that were already fixed or deliberately accepted:
 
 ```bash
-gh pr view PR_NUMBER --comments                                  # conversation thread, incl. prior `## Code Review` comments this command posted
-gh api repos/{owner}/{repo}/pulls/PR_NUMBER/comments --paginate  # inline (line-level) review-thread comments
-gh api repos/{owner}/{repo}/pulls/PR_NUMBER/reviews  --paginate  # formal review summaries (approve / request-changes)
+gh pr view PR_NUMBER --comments   # top-level thread: prior `## Code Review` + `## Review Response` blocks and human replies
 ```
 
-(`gh api` resolves `{owner}`/`{repo}` from the current repo automatically.)
+This single fetch is deliberate. The loop posts only **top-level** comments — `## Code Review` from this command, `## Review Response` from `/addressit` — so the inline-comments (`/pulls/N/comments`) and formal-reviews (`/pulls/N/reviews`) APIs return data the loop never creates; fetching them only inflates context and cache-write cost every round. Add them back only if a human is leaving inline review comments you need to honor.
 
-From these, build `PRIOR_REVIEW_CONTEXT`: a short digest of each previously-raised finding and its apparent current state — focus on the most recent `## Code Review` block this command posted plus any human replies. For each prior item, note whether the thread shows it was **fixed**, **still open**, or **intentionally accepted/deferred** by the user. If there are no prior comments, leave `PRIOR_REVIEW_CONTEXT` empty.
+From this thread, build `PRIOR_REVIEW_CONTEXT`: a short digest scoped to the **most recent** `## Code Review` block this command posted plus any `## Review Response` and human replies that follow it — do not walk the entire history. For each prior finding, note whether the thread shows it was **fixed**, **still open**, or **intentionally accepted/deferred** by the user. If there are no prior `## Code Review` comments, leave `PRIOR_REVIEW_CONTEXT` empty.
 
 ## Step 3 — Get SHAs
 
