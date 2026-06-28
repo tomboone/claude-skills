@@ -844,5 +844,207 @@ class TestBaseThreading(unittest.TestCase):
         self.assertTrue(all("--base" not in p for p in prompts))
 
 
+class TestNotifyArg(unittest.TestCase):
+    def test_absent_is_none(self):
+        self.assertIsNone(loop.parse_args([]).notify)
+
+    def test_bare_flag_defaults_macos(self):
+        self.assertEqual(loop.parse_args(["--notify"]).notify, "macos")
+
+    def test_explicit_backend(self):
+        self.assertEqual(loop.parse_args(["--notify", "pushover"]).notify, "pushover")
+
+
+class TestApplescriptQuote(unittest.TestCase):
+    def test_wraps_in_quotes(self):
+        self.assertEqual(loop._applescript_quote("hi"), '"hi"')
+
+    def test_escapes_double_quote_and_backslash(self):
+        # input chars: a " b \ c  ->  "a\"b\\c"
+        self.assertEqual(loop._applescript_quote('a"b\\c'), '"a\\"b\\\\c"')
+
+
+class TestMacosNotify(unittest.TestCase):
+    def test_builds_osascript_command(self):
+        seen = {}
+        def fake_run(cmd, **kw):
+            seen["cmd"] = cmd
+            return None
+        loop._macos_notify("My Title", "My Body", run=fake_run)
+        cmd = seen["cmd"]
+        self.assertEqual(cmd[0], "osascript")
+        self.assertEqual(cmd[1], "-e")
+        self.assertIn("display notification", cmd[2])
+        self.assertIn('"My Body"', cmd[2])
+        self.assertIn('"My Title"', cmd[2])
+
+
+class TestPushoverNotify(unittest.TestCase):
+    def test_no_post_when_env_missing(self):
+        import unittest.mock
+        called = []
+        def fake_urlopen(req, **kw):
+            called.append(req)
+        with unittest.mock.patch.dict(os.environ, {}, clear=True):
+            loop._pushover_notify("t", "m", urlopen=fake_urlopen)
+        self.assertEqual(called, [])
+
+    def test_posts_when_env_present(self):
+        import unittest.mock
+        captured = {}
+        def fake_urlopen(req, **kw):
+            captured["url"] = req.full_url
+            captured["data"] = req.data
+        env = {"PUSHOVER_APP_TOKEN": "tok", "PUSHOVER_USER_KEY": "usr"}
+        with unittest.mock.patch.dict(os.environ, env, clear=True):
+            loop._pushover_notify("Title", "Body", urlopen=fake_urlopen)
+        self.assertEqual(captured["url"], "https://api.pushover.net/1/messages.json")
+        body = captured["data"].decode()
+        self.assertIn("token=tok", body)
+        self.assertIn("user=usr", body)
+        self.assertIn("Title", body)
+        self.assertIn("Body", body)
+
+
+class TestNotifyDispatch(unittest.TestCase):
+    def test_none_backend_no_call(self):
+        calls = []
+        loop.notify(None, "t", "m", notifiers={"macos": lambda *a: calls.append(a)})
+        self.assertEqual(calls, [])
+
+    def test_unknown_backend_no_call(self):
+        calls = []
+        loop.notify("nope", "t", "m", notifiers={"macos": lambda *a: calls.append(a)})
+        self.assertEqual(calls, [])
+
+    def test_known_backend_called(self):
+        calls = []
+        loop.notify("macos", "t", "m", notifiers={"macos": lambda *a: calls.append(a)})
+        self.assertEqual(calls, [("t", "m")])
+
+    def test_swallows_backend_exception(self):
+        def boom(*a):
+            raise RuntimeError("x")
+        loop.notify("macos", "t", "m", notifiers={"macos": boom})  # must not raise
+
+    def test_registry_has_builtin_backends(self):
+        self.assertIn("macos", loop.NOTIFIERS)
+        self.assertIn("pushover", loop.NOTIFIERS)
+
+
+class TestNotificationMessages(unittest.TestCase):
+    def test_failed_ticket_title_and_step(self):
+        r = loop.TicketResult("A-1", True, None, None, "shipit",
+                              "shipit produced no PR URL", None, "FAILED", 0)
+        title, body = loop._ticket_notification(r)
+        self.assertIn("A-1", title)
+        self.assertIn("FAILED at shipit", title)
+        self.assertIn("shipit produced no PR URL", body)
+
+    def test_needs_human_reason_in_body(self):
+        r = loop.TicketResult("A-2", True, "https://github.com/o/r/pull/2",
+                              "CHANGES_REQUESTED", None, "impasse: ...", None, "NEEDS_HUMAN", 3)
+        title, body = loop._ticket_notification(r)
+        self.assertIn("NEEDS_HUMAN", title)
+        self.assertIn("impasse", body)
+
+    def test_ready_for_review_includes_pr_and_cost(self):
+        usage = [{"step": "implementit", "cost_usd": 1.5}]
+        r = loop.TicketResult("A-3", True, "https://github.com/o/r/pull/3",
+                              "APPROVED", None, None, usage, "READY_FOR_REVIEW", 1)
+        title, body = loop._ticket_notification(r)
+        self.assertIn("READY_FOR_REVIEW", title)
+        self.assertIn("pull/3", body)
+        self.assertIn("$1.5000", body)
+
+    def test_summary_counts_by_disposition(self):
+        results = [
+            loop.TicketResult("A-1", True, "u", "APPROVED", None, None, None, "MERGED", 1),
+            loop.TicketResult("A-2", True, "u", "APPROVED", None, None, None, "MERGED", 1),
+            loop.TicketResult("A-3", True, None, None, "shipit", "x", None, "FAILED", 0),
+        ]
+        title, body = loop._summary_notification(results)
+        self.assertIn("3 ticket(s)", title)
+        self.assertIn("MERGED: 2", body)
+        self.assertIn("FAILED: 1", body)
+
+    def test_summary_empty(self):
+        title, body = loop._summary_notification([])
+        self.assertIn("0 ticket(s)", title)
+        self.assertIn("no tickets", body)
+
+
+class TestMainNotify(unittest.TestCase):
+    def _driving_runner(self):
+        def runner(cmd, timeout):
+            p = cmd[2]
+            if "/personal:implementit" in p:
+                return loop.InvocationResult(0, "STATUS: IMPLEMENTED", False)
+            if "/personal:shipit" in p:
+                return loop.InvocationResult(0, "PR https://github.com/o/r/pull/1", False)
+            if "/personal:reviewit" in p:
+                return loop.InvocationResult(0, "STATUS: APPROVED", False)
+            return loop.InvocationResult(0, "", False)
+        return runner
+
+    def _wave(self, *ids):
+        return {"project": "p", "wave": [{"id": i, "title": ""} for i in ids], "held": []}
+
+    def test_fires_per_ticket_and_summary(self):
+        calls = []
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = loop.main(
+                ["--project", "p", "--repo", "r", "--notify"],
+                runner=self._driving_runner(),
+                triage_fn=lambda *a, **k: self._wave("A-1", "A-2"),
+                guard_fn=lambda runner: (True, "ok"),
+                notify_fn=lambda *a: calls.append(a),
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(calls), 3)               # 2 per-ticket + 1 summary
+        self.assertEqual(calls[-1][0], "macos")
+        self.assertIn("Loop finished", calls[-1][1])
+
+    def test_no_notify_means_no_calls(self):
+        calls = []
+        with contextlib.redirect_stdout(io.StringIO()):
+            loop.main(
+                ["--project", "p", "--repo", "r"],
+                runner=self._driving_runner(),
+                triage_fn=lambda *a, **k: self._wave("A-1"),
+                guard_fn=lambda runner: (True, "ok"),
+                notify_fn=lambda *a: calls.append(a),
+            )
+        self.assertEqual(calls, [])
+
+    def test_dry_run_no_notify_calls(self):
+        calls = []
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            loop.main(
+                ["--project", "p", "--repo", "r", "--notify", "--dry-run"],
+                runner=self._driving_runner(),
+                triage_fn=lambda *a, **k: self._wave("A-1"),
+                guard_fn=lambda runner: (True, "ok"),
+                notify_fn=lambda *a: calls.append(a),
+            )
+        self.assertEqual(calls, [])
+        self.assertIn("Notifications: macos", buf.getvalue())
+
+    def test_unknown_backend_warns_and_disables(self):
+        calls = []
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            loop.main(
+                ["--project", "p", "--repo", "r", "--notify", "bogus"],
+                runner=self._driving_runner(),
+                triage_fn=lambda *a, **k: self._wave("A-1"),
+                guard_fn=lambda runner: (True, "ok"),
+                notify_fn=lambda *a: calls.append(a),
+            )
+        self.assertEqual(calls, [])
+        self.assertIn("unknown backend", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
