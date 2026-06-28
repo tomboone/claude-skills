@@ -116,7 +116,7 @@ Run it from inside the target app's repo (so file reads and git operations resol
 ```bash
 plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
                                  [--tickets ID ...] [--dry-run] [--check] \
-                                 [--limit N] [--notify] [--max-rounds N] [--detach] [--merge]
+                                 [--limit N] [--notify [backend]] [--max-rounds N] [--detach] [--merge]
 ```
 
 | Flag | Effect |
@@ -127,7 +127,7 @@ plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
 | `--dry-run` | Run read-only triage and print the wave + the exact `claude -p` commands (including the bounded review↔address step and the merge/stop step) without executing. |
 | `--check` | Run only the feasibility guard (verifies `claude -p` + Linear/GitHub MCP are reachable). |
 | `--limit N` | Cap the wave size. |
-| `--notify` | Send a single end-of-run notification. |
+| `--notify [backend]` | Send a notification as each ticket finishes (with its final disposition) and once at the end of the run. Bare `--notify` posts a native **macOS** banner; `--notify pushover` sends via **Pushover** (requires `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` env vars). Off by default. Missing credentials or an unknown backend fail silently — the loop is never affected. |
 | `--max-rounds N` | Cap the review ↔ address rounds per ticket (default 3); exhausting them stalls the ticket as `NEEDS_HUMAN`. |
 | `--detach` | Background the run: re-launch detached, write stdout/stderr to a timestamped `<repo>/.claude/loop/run-*.log` (self-`.gitignore`d), print a `tail -f` watch command, and return immediately. |
 | `--merge` | Run `mergeit` after the review↔address loop reaches APPROVED. **Off by default** — without it the loop stops at the `READY_FOR_REVIEW` disposition (PR opened and loop-approved, left for a human/team to merge). Use it on repos where auto-merge is wanted; omit it where PRs require team approval. |

@@ -6,6 +6,8 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 from collections import namedtuple
 from datetime import datetime, timezone
 
@@ -281,6 +283,63 @@ def format_summary(results, held):
     return "\n".join(lines)
 
 
+def _applescript_quote(s):
+    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _macos_notify(title, message, run=subprocess.run):
+    # Off-macOS or missing osascript → raises → swallowed by notify().
+    script = f"display notification {_applescript_quote(message)} with title {_applescript_quote(title)}"
+    run(["osascript", "-e", script], capture_output=True, timeout=10)
+
+
+def _pushover_notify(title, message, urlopen=urllib.request.urlopen):
+    token = os.environ.get("PUSHOVER_APP_TOKEN")
+    user = os.environ.get("PUSHOVER_USER_KEY")
+    if not token or not user:
+        return  # missing creds → silent no-op
+    data = urllib.parse.urlencode(
+        {"token": token, "user": user, "title": title, "message": message}
+    ).encode()
+    req = urllib.request.Request("https://api.pushover.net/1/messages.json", data=data)
+    urlopen(req, timeout=10)
+
+
+NOTIFIERS = {"macos": _macos_notify, "pushover": _pushover_notify}
+
+
+def notify(backend, title, message, notifiers=NOTIFIERS):
+    if not backend:
+        return
+    fn = notifiers.get(backend)
+    if fn is None:
+        return
+    try:
+        fn(title, message)
+    except Exception:
+        pass  # notifications must NEVER affect the loop
+
+
+def _ticket_notification(r):
+    status = f"FAILED at {r.failed_step}" if r.failed_step else (r.disposition or r.review_status or "done")
+    title = f"Loop: {r.ticket_id} → {status}"
+    parts = [p for p in (r.reason, r.pr_url) if p]
+    cost = _ticket_cost(r)
+    if cost:
+        parts.append(f"${cost:.4f}")
+    return title, " — ".join(parts) or status
+
+
+def _summary_notification(results):
+    counts = {}
+    for r in results:
+        key = "FAILED" if r.failed_step else (r.disposition or "?")
+        counts[key] = counts.get(key, 0) + 1
+    title = f"Loop finished: {len(results)} ticket(s)"
+    body = ", ".join(f"{k}: {v}" for k, v in counts.items()) or "no tickets"
+    return title, body
+
+
 TRIAGE_PROMPT = (
     "Using the Linear MCP, find work tickets in project {project!r} that are ready for the "
     "implementation loop. A ticket qualifies only if ALL hold: it carries BOTH the {label!r} "
@@ -325,7 +384,12 @@ def parse_args(argv):
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--check", action="store_true")
     p.add_argument("--limit", type=int)
-    p.add_argument("--notify", action="store_true")
+    p.add_argument(
+        "--notify", nargs="?", const="macos", default=None,
+        help="Notify as each ticket finishes and at end of run. Bare --notify uses a "
+             "macOS banner; '--notify pushover' uses Pushover (needs PUSHOVER_APP_TOKEN "
+             "and PUSHOVER_USER_KEY). Unknown backends are ignored.",
+    )
     p.add_argument("--max-rounds", type=int, default=MAX_ROUNDS)
     p.add_argument("--detach", action="store_true")
     p.add_argument("--merge", action="store_true")
@@ -519,7 +583,7 @@ def run_triage(project, label, repo_label, runner):
     return parse_triage_result(res.result_text)
 
 
-def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibility_guard):
+def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibility_guard, notify_fn=notify):
     args = parse_args(argv)
 
     if args.detach:
@@ -531,6 +595,11 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
     models = default_models()
     timeouts = default_timeouts()
     efforts = default_efforts()
+
+    backend = args.notify
+    if backend is not None and backend not in NOTIFIERS:
+        print(f"notify: unknown backend {backend!r} — notifications disabled for this run", file=sys.stderr)
+        backend = None
 
     ok, msg = guard_fn(runner)
     if not ok:
@@ -556,6 +625,8 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
         filt = repo_label if repo_label else "(none — explicit tickets)"
         print(f"Project: {project}. Repo filter: {filt}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
         print(f"Base branch: {base}")
+        if backend:
+            print(f"Notifications: {backend} (per ticket + end of run)")
         for t in wave:
             for step_name in ("implementit", "shipit", "reviewit"):
                 suffix = f" --base {base}" if (base and step_name in ("implementit", "shipit")) else ""
@@ -586,7 +657,11 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
         else:
             emit(f"{r.ticket_id} → {r.disposition}")
         results.append(r)
+        if backend:
+            notify_fn(backend, *_ticket_notification(r))
     print(format_summary(results, triage["held"]))
+    if backend:
+        notify_fn(backend, *_summary_notification(results))
     return 0
 
 
