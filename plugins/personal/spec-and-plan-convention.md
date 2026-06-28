@@ -6,12 +6,20 @@ The single rule for where design specs and implementation plans live. `/planit`,
 
 1. **Per-project override.** If any loaded `CLAUDE.md` defines a `specs_dir` value, `DOCS_DIR` = that value (relative paths resolve from the project root). Use it as-is and skip to *Layout*.
 
-2. **Auto-resolve by project shape.** Find the repo root with `git rev-parse --show-toplevel`, then inspect its parent directory:
+2. **No `specs_dir`? Authoring commands offer to pin one.** When resolving for an **authoring command (`/planit`, `/projectit`)** and no loaded `CLAUDE.md` sets `specs_dir`, do **not** silently auto-resolve — offer to make the convention explicit:
+   - **Detect** an existing superpowers docs tree under the repo, in order: `<repo>/docs/superpowers`, `<repo>/.claude/docs/superpowers`, or (umbrella) `<umbrella>/docs/superpowers`. If found, propose `specs_dir` = its base (`docs`, `.claude/docs`, or the umbrella path) — "lock to existing docs."
+   - **Else** propose the default **`specs_dir: docs`** (a `docs/` folder at the repo root).
+   - Show the proposal; the user confirms, edits the value, or declines.
+   - **On confirm:** write `specs_dir: <value>` into the repo's `CLAUDE.md` (prefer an existing `.claude/CLAUDE.md`, else `CLAUDE.md`; create `.claude/CLAUDE.md` if neither exists) and ensure `<DOCS_DIR>/superpowers/{specs,plans}` exist. `DOCS_DIR = <repo>/<value>`.
+   - **On decline:** fall through to auto-resolution (next step) for this run.
+   **Read-only commands (`/implementit`, `/reviewit`) and the loop never prompt** — they skip this step, auto-resolve, and report if nothing is found. `/projectit` runs this offer **per assigned repo** via `docs_dir_for(repo)`.
+
+3. **Auto-resolve by project shape.** Find the repo root with `git rev-parse --show-toplevel`, then inspect its parent directory:
    - **Umbrella layout** — the repo root's parent is **not** a git repo and contains sibling code repos (typically a backend and a frontend). The umbrella (the non-git parent) is the project root. → `DOCS_DIR = <umbrella>/docs`, a sibling of the code repos.
    - **Single-repo layout** — the repo stands alone (its parent is not an umbrella of sibling repos). → `DOCS_DIR = <repo-root>/.claude/docs`.
    - If it's genuinely ambiguous, ask which applies before writing anything.
 
-3. Create `DOCS_DIR` and the subfolders below if they don't exist.
+4. Create `DOCS_DIR` and the subfolders below if they don't exist.
 
 ## Linear target hints (for `/projectit`)
 

@@ -21,12 +21,14 @@ Look for a plan file whose name contains `{TICKET_ID}` (case-insensitive) in **b
 - If none match, check for a spec file containing `{TICKET_ID}` in `DOCS_DIR/superpowers/specs/` **and** `DOCS_DIR/specs/` — a spec without a separate plan is acceptable input.
 - If nothing is found in either location, stop and tell the user to run `/personal:planit {TICKET_ID}` first. Then, as the **very last line of your response**, emit `STATUS: NO_PLAN` so the headless loop orchestrator records this ticket as *not implemented* instead of marching on to `/personal:shipit`.
 
-## Step 3 — Load the milestone spec (if the plan references one)
+## Step 3 — Load the referenced spec (if the plan references one)
 
-Read the chosen plan file. If it contains a line beginning `**Milestone spec:** `, resolve that
-relative path (from the plan file's location) and read the referenced milestone spec. Pass **both**
-the plan and the milestone spec to the implementation in Step 5 — the plan is the per-ticket slice,
-the milestone spec is the shared design context.
+Read the chosen plan file. If it contains a line beginning `**Spec:** ` **or** `**Milestone spec:** `,
+resolve that relative path (from the plan file's location) and read the referenced spec. Pass **both**
+the plan and the spec to the implementation in Step 5 as design context — the plan is the per-ticket
+slice, the spec is the design it realizes. (`**Spec:** ` points to a per-ticket spec from a newer
+`/projectit` run; `**Milestone spec:** ` points to a shared milestone spec from an older run — both
+are supported.)
 
 If the plan has no such line (e.g. a `/planit`-authored plan), proceed with the plan alone — this
 step is a no-op. Backwards-compatible.

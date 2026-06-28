@@ -187,6 +187,12 @@ def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS,
             break
         if last_review != "CHANGES_REQUESTED":
             return fail("reviewit", "reviewit emitted no verdict")
+        # Out of address budget: this CHANGES verdict is the confirming re-review that
+        # FOLLOWS the max_rounds-th addressit, so there's nothing left to try. Using `>`
+        # (not `>=`) guarantees the last addressit always gets a re-review — otherwise a
+        # fix made on the final round is never confirmed and the ticket stalls needlessly.
+        if rounds > max_rounds:
+            return stall(f"max rounds ({max_rounds}) reached without approval")
 
         res = step("addressit", models["addressit"], timeouts["addressit"], label=f"addressit (round {rounds})")
         if res.timed_out or res.returncode != 0:
@@ -196,9 +202,7 @@ def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS,
             return stall("impasse: reviewer requested changes, addressit pushed back")
         if addressed == "BLOCKED" or addressed is None:
             return stall("addressit blocked / emitted no status")
-        if rounds >= max_rounds:
-            return stall(f"max rounds ({max_rounds}) reached without approval")
-        # else ADDRESSED → loop for re-review
+        # ADDRESSED → loop for re-review
 
     if not merge:
         return TicketResult(tid, True, pr_url, last_review, None, None, usages, "READY_FOR_REVIEW", rounds)

@@ -3,7 +3,17 @@
 
 ## Conventions used by this command
 
-- Resolve `DOCS_DIR` exactly as `/personal:planit` does (specs_dir override; else umbrella `<umbrella>/docs` or single-repo `<repo>/.claude/docs`).
+- **Per-repo docs.** Each ticket's docs live in **its assigned repo**. Define `docs_dir_for(repo)`:
+  resolve `DOCS_DIR` from *that repo's* root + its `CLAUDE.md` exactly as `/personal:planit` does
+  (`specs_dir` override → umbrella `<umbrella>/docs` → single-repo `<repo>/.claude/docs`). Cache per
+  repo. A single-repo project resolves once (unchanged behavior). There is **no** project- or
+  milestone-level shared docs location.
+  When a repo has no `specs_dir`, `docs_dir_for(repo)` runs the convention's **pin-`specs_dir` offer
+  for that repo** (detect an existing superpowers tree → else default `specs_dir: docs`; on confirm,
+  write it into that repo's `CLAUDE.md` and create the folders) before falling back to
+  auto-resolution. Phase 0 is interactive, so do this **per assigned repo** as repos are resolved; a
+  repo not checked out locally can't be pinned — skip it (as for doc generation). See
+  `spec-and-plan-convention.md`.
 - **Dry-run:** if `--dry-run` is passed, make NO `save_*`/`create_*` Linear calls. Instead print each Linear write you would make, and write any generated docs under `DOCS_DIR/superpowers/.dryrun/` rather than `specs/`/`plans/`. This dry-run rule is honored by every later phase — each phase's write step prints instead of executing when dry-run is active.
 - **Never** set issue `status` — the GitHub↔Linear connector owns it.
 - Create nothing in Linear until after the Phase 3 gate.
@@ -31,6 +41,12 @@
    single repo, default all tickets to that repo's canonical name. If all
    three tiers leave `REPOS` empty or unresolved, ask the user directly to
    name the target repo(s) before proceeding to Phase 3.
+   For each repo in `REPOS`, also record its **local filesystem path** (the sibling-scan in tier (b)
+   yields these directly; for repos resolved via tier (a)/(c) without a known path, locate the repo
+   under the workspace or ask the user). This path is required to read the repo's `CLAUDE.md` and to
+   write its docs. If an assigned repo is **not checked out locally**, note it and **skip generating
+   that repo's docs** in Phase 4 (the ticket is still created and labeled in Linear; its spec/plan can
+   be authored later with `/personal:planit` run inside that repo).
 
 ## Phase 1 — Project description  ■ gate
 
@@ -69,34 +85,43 @@ On approval, create top-down in one batch (dry-run prints each call instead):
 
 ## Phase 4 — Bulk doc generation (subagents)
 
-Run on Opus. Resolve `DOCS_DIR`. Two ordered rounds; batch subagents (≤5 at a time) per
-`superpowers:dispatching-parallel-agents`.
+Run on Opus. Batch subagents (≤5 at a time) per `superpowers:dispatching-parallel-agents`. Each
+ticket gets a **self-contained `spec + plan` written into its own repo** (`docs_dir_for(ticket.repo)`)
+— planit's output shape. There is **no milestone-spec file**.
 
-### Round 1 — milestone specs (one subagent per milestone)
-Each subagent receives: the project description, the milestone goal, its stories+tickets, and the
-repo path (it explores actual code/conventions). It writes `DOCS_DIR/superpowers/specs/<project-slug>-m<NN>-<slug>.md`
-containing: purpose/scope of the phase; architecture & approach (components, data models, interfaces
-it introduces); cross-cutting decisions & constraints; milestone-level acceptance; explicit
-out-of-scope. It returns the path + a one-line summary. (Dry-run: write under `DOCS_DIR/superpowers/.dryrun/specs/`.)
+### Cross-ticket design pass (in context, not a file)
+Before dispatching, draft each milestone's cross-cutting decisions and shared contracts (from the
+Phase-1 description + the Phase-3 breakdown) and hold them as notes. These notes are **not written to
+disk** — they are passed to the relevant ticket subagents so their self-contained specs make the
+**same** decisions (especially a cross-stack contract: the BE ticket and the FE ticket that consumes
+it must agree). Each ticket spec **inlines** the decisions it needs; nothing is cross-linked.
 
-### Round 2 — ticket plans (one subagent per work ticket, after Round 1)
-Complete all Round 1 subagents and confirm every milestone spec file is on disk before dispatching any Round 2 subagent.
+### Per-ticket subagents (dependency order)
+Dispatch one subagent per work ticket, in dependency order so a ticket's `blockedBy` prerequisites'
+specs already exist and can be passed as context. Each subagent receives: the project description; the
+milestone shared-decision notes; the ticket's story + intent; its `blockedBy` prerequisites' specs;
+and **its assigned repo's path** (it explores that repo's real code/conventions). It writes BOTH, under
+`DOCS_DIR = docs_dir_for(ticket.repo)`:
 
-Each subagent receives: the ticket's milestone spec (now on disk), its story context, the ticket
-intent, the docs of its `blockedBy` prerequisites, and the repo path. It writes
-`DOCS_DIR/superpowers/plans/<TICKET-ID>-<slug>.md` — a RESILIENT plan: what to build, acceptance criteria, which part of
-the milestone design it realizes, testing intent. Deliberately light on exact file/function
-signatures (those are filled in by `/implementit` against real code). It MUST start the file with:
+- **Spec** → `DOCS_DIR/superpowers/specs/<TICKET-ID>-<slug>.md` — self-contained: purpose/scope;
+  architecture & approach (components, data models, interfaces it introduces); the cross-cutting
+  decisions it depends on (inlined); acceptance; explicit out-of-scope.
+- **Plan** → `DOCS_DIR/superpowers/plans/<TICKET-ID>-<slug>.md` — a RESILIENT plan: what to build,
+  acceptance criteria, which part of the design it realizes, testing intent; deliberately light on
+  exact file/function signatures (filled in by `/implementit` against real code). It MUST start with:
 
-    **Milestone spec:** <relative path from this plan to its milestone spec>
-    **Depends on:** <TICKET-ID, …>   (omit if no blockers)
+      **Spec:** ../specs/<TICKET-ID>-<slug>.md
+      **Depends on:** <TICKET-ID, …>   (omit if no blockers)
 
-The relative path resolves as `../specs/<project-slug>-m<NN>-<slug>.md` (since plans live in `plans/` and specs in `specs/`).
+  The `../specs/<TICKET-ID>-<slug>.md` link is **same-repo** (both files under the ticket's `DOCS_DIR`),
+  so it always resolves — there is no cross-repo reference.
 
-It returns the path + a one-line summary. (Dry-run: write under `DOCS_DIR/superpowers/.dryrun/plans/`.)
+Skip any ticket whose repo isn't checked out locally (per Phase 0 step 7); list it as skipped.
+Each subagent returns both paths + a one-line summary. (Dry-run: write under
+`docs_dir_for(ticket.repo)/superpowers/.dryrun/{specs,plans}/` instead of `specs/`/`plans/`.)
 
 ### ■ Bulk review gate
-Present a table: milestone → spec path; ticket → plan path (grouped by story), each with its
+Present a table: ticket → repo, spec path, plan path (grouped by story/milestone), each with its
 one-line summary. The user reviews on disk. For any doc that is off, re-dispatch just that one
 subagent with the user's feedback appended. Proceed to Phase 5 only on approval.
 
@@ -112,22 +137,20 @@ Also, for each repo in `REPOS`, ensure a `repo:<name>` label exists; create any 
 
 ### Step 2 — Update work-ticket descriptions and apply `loop-ready`
 
-For each work ticket (leaf-level issue, not stories), compute:
+For each work ticket (leaf-level issue, not stories), with `DOCS_DIR = docs_dir_for(ticket.repo)`:
 
-- **Relative plan path:** the path of `DOCS_DIR/superpowers/plans/<TICKET-ID>-<slug>.md` relative to
-  `DOCS_DIR`. Example: `superpowers/plans/PRD-42-add-widget.md`.
-- **Milestone spec reference:** the relative path of the ticket's milestone spec. Example:
-  `superpowers/specs/myproject-m01-foundation.md`.
-- **GitHub plan URL (best-effort):** if `DOCS_DIR` has been committed and pushed to the remote,
-  construct the URL as `<repo-remote-url>/blob/<default-branch>/<DOCS_DIR-relative-plan-path>`.
-  Skip the attachment if the file is not yet in the remote.
+- **Relative plan path:** `DOCS_DIR/superpowers/plans/<TICKET-ID>-<slug>.md` relative to `DOCS_DIR`
+  (e.g. `superpowers/plans/PRD-42-add-widget.md`).
+- **Relative spec path:** `superpowers/specs/<TICKET-ID>-<slug>.md`.
+- **GitHub plan URL (best-effort):** if the ticket's repo `DOCS_DIR` is committed + pushed, construct
+  `<that-repo-remote-url>/blob/<default-branch>/<DOCS_DIR-relative-plan-path>`; else skip the attachment.
 
 Call `save_issue(id=<ticket-id>, description=<updated>, labels=["loop-ready", "repo:<assigned-repo>"])` where the updated
 description prepends the following header block to the existing ticket description:
 
 ```
 **Plan:** <relative plan path>
-**Milestone spec (repo):** <relative milestone spec path>
+**Spec:** <relative spec path>
 ```
 
 If the plan URL is available (committed and pushed), include `links=[{url: <github-plan-url>, title: "Implementation plan"}]` in the same `save_issue` call (best-effort — omit the `links` param if the file is not yet in the remote).
@@ -136,21 +159,7 @@ If the plan URL is available (committed and pushed), include `links=[{url: <gith
 
 (Dry-run: print each `save_issue` call instead of executing.)
 
-### Step 3 — Update milestone descriptions
-
-For each milestone, compute the relative path of its spec file (relative to `DOCS_DIR`). Call
-`save_milestone(project=PROJECT, id=<milestone-id>, description=<updated>)` where the updated description prepends:
-
-```
-**Spec:** <relative spec path>
-```
-
-to the existing milestone description (the held Phase-2 goal). If the spec URL is available (same
-committed-and-pushed check as Step 2), append a link: `([view on GitHub](<github-spec-url>))`.
-
-(Dry-run: print each `save_milestone` call instead of executing.)
-
-### Step 4 — Final summary
+### Step 3 — Final summary
 
 Print a summary block:
 
@@ -164,6 +173,5 @@ Next step: run /implementit on any loop-ready ticket to begin implementation.
 ```
 
 The loop selects work tickets by the `loop-ready` label **scoped to the repo it runs in** (the
-`repo:<name>` label), so running it in a given repo root only picks up that repo's tickets. The
-loop reads plans from disk by ticket ID; the Linear `links` attachment added in Step 2 is a
-human-convenience reference, not load-bearing for the loop.
+`repo:<name>` label) and reads each ticket's plan from **that repo's** docs by ticket ID. The Linear
+`links` attachment from Step 2 is a human-convenience reference, not load-bearing for the loop.
