@@ -4,8 +4,9 @@
 ## Step 1 — Resolve the docs directory
 
 Determine `DOCS_DIR` for this project (must resolve the same on every machine):
-1. **Override:** if any loaded `CLAUDE.md` defines `specs_dir`, `DOCS_DIR` = that value (resolve relative paths from the project root); skip to step 2.
-2. Otherwise auto-resolve via `git rev-parse --show-toplevel` and the repo root's parent:
+1. **Override:** if any loaded `CLAUDE.md` defines `specs_dir`, `DOCS_DIR` = that value (resolve relative paths from the project root); skip to "Specs live in…".
+2. **No `specs_dir`? Offer to pin one** (do not silently auto-resolve): detect an existing superpowers docs tree under the repo (`<repo>/docs/superpowers`, `<repo>/.claude/docs/superpowers`, or umbrella `<umbrella>/docs/superpowers`) and propose `specs_dir` = its base; else propose the default `specs_dir: docs`. On confirm, write `specs_dir: <value>` into the repo's `CLAUDE.md` (prefer `.claude/CLAUDE.md`) and use `DOCS_DIR = <repo>/<value>`. On decline, continue to step 3. (See `spec-and-plan-convention.md`.)
+3. **Auto-resolve** (only if not pinned) via `git rev-parse --show-toplevel` and the repo root's parent:
    - **Umbrella layout** — parent is *not* a git repo and holds sibling code repos (e.g. a backend and a frontend): `DOCS_DIR = <umbrella>/docs`.
    - **Single-repo layout** — the repo stands alone: `DOCS_DIR = <repo-root>/.claude/docs`.
    - If genuinely ambiguous, ask the user.

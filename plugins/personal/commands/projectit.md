@@ -8,6 +8,12 @@
   (`specs_dir` override → umbrella `<umbrella>/docs` → single-repo `<repo>/.claude/docs`). Cache per
   repo. A single-repo project resolves once (unchanged behavior). There is **no** project- or
   milestone-level shared docs location.
+  When a repo has no `specs_dir`, `docs_dir_for(repo)` runs the convention's **pin-`specs_dir` offer
+  for that repo** (detect an existing superpowers tree → else default `specs_dir: docs`; on confirm,
+  write it into that repo's `CLAUDE.md` and create the folders) before falling back to
+  auto-resolution. Phase 0 is interactive, so do this **per assigned repo** as repos are resolved; a
+  repo not checked out locally can't be pinned — skip it (as for doc generation). See
+  `spec-and-plan-convention.md`.
 - **Dry-run:** if `--dry-run` is passed, make NO `save_*`/`create_*` Linear calls. Instead print each Linear write you would make, and write any generated docs under `DOCS_DIR/superpowers/.dryrun/` rather than `specs/`/`plans/`. This dry-run rule is honored by every later phase — each phase's write step prints instead of executing when dry-run is active.
 - **Never** set issue `status` — the GitHub↔Linear connector owns it.
 - Create nothing in Linear until after the Phase 3 gate.
