@@ -44,7 +44,7 @@ Commands are then available as `/personal:<command>` (e.g. `/personal:planit`).
 
 The plugin is organized into three layers, all keyed on a Linear ticket ID:
 
-1. **Planning** — turn ideas into `loop-ready` tickets with specs and plans (`/projectit`, `/planit`).
+1. **Planning** — shape an idea into Linear tickets (`/projectit`), then plan each ticket just-in-time (`/planit`).
 2. **Per-ticket pipeline commands** — each runnable standalone, each re-resolving all of its state
    from the ticket ID plus on-disk docs and GitHub/Linear, so each runs in a fresh context with no
    handoff state required (`/implementit`, `/shipit`, `/reviewit`, `/addressit`, `/mergeit`).
@@ -55,8 +55,8 @@ The plugin is organized into three layers, all keyed on a Linear ticket ID:
 
 | Command | Usage | What it does |
 |---|---|---|
-| `/projectit` | `[--dry-run] ["idea"]` | **Planning (bulk).** Scaffolds a whole Linear project from an idea — description, milestones, user stories, work tickets — and pre-generates a design spec per milestone and an implementation plan per ticket. Marks every work ticket `loop-ready`. Front-loads all per-ticket planning so the loop can run `/implementit` directly. |
-| `/planit` | `{TICKET_ID}` | **Planning (per-ticket).** Researches a single ticket; if a sufficient spec already exists it says so, otherwise it hands off to Superpowers brainstorming + plan-writing and saves the outputs by convention. The per-ticket alternative to `/projectit`'s bulk planning. |
+| `/projectit` | `[--dry-run] ["idea"]` | **Planning (project shaping).** Turns an idea into a Linear project — description, milestones (each with a **Shared contracts** section), user stories, and work tickets — and creates them in Linear. Does **not** generate specs/plans or apply labels; per-ticket planning happens later with `/planit`. Multi-repo projects tag each ticket with a `**Target repo:**` line. |
+| `/planit` | `{TICKET_ID}` | **Planning (per-ticket, just-in-time).** Researches a single ticket — including its parent milestone's shared contracts and any already-merged dependencies' shipped specs/code — then, if no sufficient spec exists, hands off to Superpowers brainstorming + plan-writing and saves spec/plan by convention so `/implementit` finds them by ticket ID. |
 | `/implementit` | `{TICKET_ID}` | Creates the work branch and executes the ticket's plan via Superpowers `subagent-driven-development` (fresh subagent per task, two-stage review, final whole-branch review). Emits `STATUS: IMPLEMENTED`. |
 | `/shipit` | `{TICKET_ID}` | Commits any outstanding work (Conventional Commit + ticket parenthetical), pushes, and opens a PR against the release branch. Fits the repo's PR template if it has one. |
 | `/reviewit` | `{TICKET_ID}` | Reviews the PR via the Superpowers code-reviewer, **building on any prior review rounds** (reads the existing review thread so re-reviews don't re-flag resolved items), posts findings as a `## Code Review` comment, and emits `STATUS: APPROVED` / `STATUS: CHANGES_REQUESTED`. |
@@ -66,9 +66,9 @@ The plugin is organized into three layers, all keyed on a Linear ticket ID:
 ### The two entry points
 
 - **Per-ticket:** `/planit` → `/implementit` → `/shipit` → `/reviewit` ↔ `/addressit` → `/mergeit`.
-- **Whole-project:** `/projectit` scaffolds and plans an entire project up front, then each ticket
-  goes straight to `/implementit` → `/shipit` → `/reviewit` ↔ `/addressit` → `/mergeit` (no
-  `/planit` needed).
+- **Whole-project:** `/projectit` shapes the project into tickets up front; then **each ticket follows
+  the per-ticket flow** — `/planit` → `/implementit` → `/shipit` → `/reviewit` ↔ `/addressit` →
+  `/mergeit`.
 
 The `/reviewit` ↔ `/addressit` step alternates until the reviewer returns `APPROVED` (or the two
 reach an impasse). Ticket statuses are never set by these commands — the GitHub↔Linear connector
@@ -77,10 +77,12 @@ owns status transitions based on branch/PR activity.
 ## The autonomous loop
 
 `plugins/personal/scripts/loop.py` is a headless orchestrator (Python 3, standard library only)
-that drives the commands non-interactively via `claude -p`. It is the **consumer** of what
-`/projectit` produces: per run it processes one wave of `loop-ready` tickets whose blockers are all
-`Done`, driving each ticket all the way to a merged PR before starting the next — so each new branch
-roots on an up-to-date `main` and downstream conflicts shrink.
+that drives the commands non-interactively via `claude -p`. Per run it processes one wave of
+`loop-ready`-labelled tickets whose blockers are all `Done`, driving each ticket all the way to a
+merged PR before starting the next — so each new branch roots on an up-to-date `main` and downstream
+conflicts shrink. Note that `/projectit` no longer plans tickets or applies labels, so to use the
+loop you feed it tickets you've already planned with `/planit` and marked `loop-ready` yourself (or
+pass them explicitly via `--tickets`).
 
 ### Per-ticket state machine
 
@@ -97,7 +99,7 @@ implementit → shipit → ┌─ reviewit ──→ APPROVED ──[--merge]─
                                      rounds exhausted ───────────→ NEEDS_HUMAN
 ```
 
-- The review ↔ address alternation is **bounded** by `--max-rounds` (default 3). One round =
+- The review ↔ address alternation is **bounded** by `--max-rounds` (default 2). One round =
   one `reviewit` + (if not approved) one `addressit`.
 - A ticket is merged only after an `APPROVED` verdict **and only when `--merge` is set**; otherwise an APPROVED verdict leaves the PR at `READY_FOR_REVIEW` for a human/team to merge.
 - Any **stall** — an impasse (`PUSHED_BACK`), `addressit` `BLOCKED`, rounds exhausted without
@@ -128,7 +130,7 @@ plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
 | `--check` | Run only the feasibility guard (verifies `claude -p` + Linear/GitHub MCP are reachable). |
 | `--limit N` | Cap the wave size. |
 | `--notify [backend]` | Send a notification as each ticket finishes (with its final disposition) and once at the end of the run. Bare `--notify` posts a native **macOS** banner; `--notify pushover` sends via **Pushover** (requires `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` env vars). Off by default. Missing credentials or an unknown backend fail silently — the loop is never affected. |
-| `--max-rounds N` | Cap the review ↔ address rounds per ticket (default 3); exhausting them stalls the ticket as `NEEDS_HUMAN`. |
+| `--max-rounds N` | Cap the review ↔ address rounds per ticket (default 2); exhausting them stalls the ticket as `NEEDS_HUMAN`. |
 | `--detach` | Background the run: re-launch detached, write stdout/stderr to a timestamped `<repo>/.claude/loop/run-*.log` (self-`.gitignore`d), print a `tail -f` watch command, and return immediately. |
 | `--merge` | Run `mergeit` after the review↔address loop reaches APPROVED. **Off by default** — without it the loop stops at the `READY_FOR_REVIEW` disposition (PR opened and loop-approved, left for a human/team to merge). Use it on repos where auto-merge is wanted; omit it where PRs require team approval. |
 
@@ -148,15 +150,15 @@ to retune from real usage data — not final):
 |---|---|---|
 | `implementit` | Sonnet | high |
 | `shipit` | Sonnet | low |
-| `reviewit` (round 1) | Opus | high |
-| `reviewit` (re-review, rounds ≥2) | Sonnet | medium |
+| `reviewit` (all rounds) | Sonnet | medium |
 | `addressit` | Sonnet | medium |
 | `mergeit` | Haiku | low |
 | triage | Sonnet | medium |
 | feasibility guard | Haiku | low |
 
-Planning quality is front-loaded into `/projectit`, and the first review gets the heaviest model;
-re-reviews and the mechanical merge step run on the cheaper tier.
+Only `implementit` (which writes the code) keeps high effort; reviews run on Sonnet at medium effort
+and the mechanical merge step on Haiku. The per-step `usage/cost` summary also reports a **cache
+write** column alongside cache reads, so each cold-started step's cache cost is visible.
 
 ### Observability
 
@@ -180,7 +182,7 @@ transitions, model/effort routing, max-rounds boundary, detach helpers, and summ
 Several commands share on-disk conventions so they behave identically on every machine:
 
 - **[`spec-and-plan-convention.md`](plugins/personal/spec-and-plan-convention.md)** — where specs and
-  plans live. Used by `/projectit`, `/planit`, `/implementit`, `/reviewit`, `/addressit`.
+  plans live. Used by `/planit`, `/implementit`, `/reviewit`, `/addressit`.
   - **`specs_dir` in a project's `CLAUDE.md`** overrides everything.
   - Otherwise: **umbrella** layout (a non-git folder holding sibling repos) → `<umbrella>/docs/`;
     **single repo** → `<repo>/.claude/docs/`.
@@ -202,7 +204,7 @@ Linear target without searching:
   otherwise derives `<name>` from `git remote get-url origin` (basename). Used to filter triage to
   this repo's tickets within a multi-repo project.
 - `linear_repos: [<name>, <name>, …]` — for `/projectit`: the canonical repo names a project's
-  tickets may target, so each ticket can be tagged with the right `repo:<name>` at creation.
+  tickets may target, so each ticket can carry the right `**Target repo:**` line at creation.
 
 ## The canonical global `CLAUDE.md`
 

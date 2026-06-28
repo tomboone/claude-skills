@@ -21,6 +21,8 @@ Use the Linear MCP to fetch ticket `{TICKET_ID}`. Extract:
 - Any attached documents or file links (fetch their contents)
 - Parent ticket, sub-issues, and directly related tickets — fetch each and note how they relate
 - Any comments containing decisions, constraints, or clarifications (ignore status-update noise)
+- **Parent milestone (shared contracts):** fetch the ticket's parent milestone and read its description; surface any **Shared contracts** / cross-cutting decisions it records — the plan must honor these.
+- **Merged dependencies as ground truth:** for each `blockedBy` (or directly related) ticket that is already Done/merged, read its **actual shipped spec** (`DOCS_DIR/superpowers/specs/<DEP-ID>-*.md`) and the merged code it produced — not just the Linear text — so this plan matches what was really built.
 
 Summarise what you've gathered. Flag any ambiguities that would need resolving before implementation.
 
@@ -46,7 +48,7 @@ Continue to Step 4.
 
 ## Step 4 — Hand off to Superpowers
 
-Present the ticket context you gathered in Step 2 as the starting point for design, then invoke the `superpowers:brainstorming` skill. Frame the problem for it using the ticket title, description, and any relevant attached docs or related ticket context you fetched.
+Present the ticket context you gathered in Step 2 — including the parent milestone's **Shared contracts** and any merged dependencies' shipped specs/code — as the starting point for design, then invoke the `superpowers:brainstorming` skill. Frame the problem for it using the ticket title, description, and any relevant attached docs or related ticket context you fetched, so the design honors the established contracts and matches what was actually built.
 
 Let Superpowers run its full brainstorming and `superpowers:writing-plans` workflow from here. Do not implement anything yourself.
 
