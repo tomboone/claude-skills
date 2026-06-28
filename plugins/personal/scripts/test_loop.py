@@ -301,7 +301,7 @@ class TestRunTicketPipeline(unittest.TestCase):
         loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS, merge=True)
         cmds = runner.calls["cmds"]
         self.assertEqual(cmds[0][cmds[0].index("--model") + 1], "sonnet")   # implementit
-        self.assertEqual(cmds[2][cmds[2].index("--model") + 1], "opus")     # reviewit round 1
+        self.assertEqual(cmds[2][cmds[2].index("--model") + 1], "sonnet")   # reviewit round 1
         self.assertEqual(cmds[3][cmds[3].index("--model") + 1], "haiku")    # mergeit
 
 
@@ -530,7 +530,7 @@ class TestPipelineUsage(unittest.TestCase):
         ])
         r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS, merge=True)
         self.assertEqual([u["step"] for u in r.usage], ["implementit", "shipit", "reviewit", "mergeit"])
-        self.assertEqual(r.usage[2]["model"], "opus")
+        self.assertEqual(r.usage[2]["model"], "sonnet")
         self.assertEqual(r.usage[2]["cost_usd"], 2.0)
 
     def test_records_usage_for_failed_step(self):
@@ -563,9 +563,9 @@ class TestPipelineStateMachine(unittest.TestCase):
         r = loop.run_ticket_pipeline({"id": "A-1"}, runner, MODELS, TIMEOUTS, merge=True)
         self.assertEqual(r.disposition, "MERGED")
         self.assertEqual(r.rounds, 2)
-        # round-2 review uses reviewit_rereview model
+        # both rounds use sonnet (round-1 reviewit and round-2 reviewit_rereview)
         review_cmds = [c for c in runner.calls["cmds"] if "reviewit" in c[2]]
-        self.assertEqual(review_cmds[0][review_cmds[0].index("--model")+1], "opus")
+        self.assertEqual(review_cmds[0][review_cmds[0].index("--model")+1], "sonnet")
         self.assertEqual(review_cmds[1][review_cmds[1].index("--model")+1], "sonnet")
 
     def test_pushed_back_stalls(self):

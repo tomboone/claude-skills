@@ -11,11 +11,12 @@ Resolve `PR_NUMBER` for `{TICKET_ID}` as defined in `plugins/personal/pr-resolut
 
 **Live PR state.**
 ```bash
-gh pr view PR_NUMBER                                             # title, body
-gh pr diff PR_NUMBER                                             # current full diff
-gh pr view PR_NUMBER --comments                                  # full conversation thread
-gh api repos/{owner}/{repo}/pulls/PR_NUMBER/comments --paginate  # inline review-thread comments
+gh pr view PR_NUMBER              # title, body
+gh pr diff PR_NUMBER              # current full diff
+gh pr view PR_NUMBER --comments   # top-level thread: `## Code Review` + `## Review Response` blocks and human replies
 ```
+
+The inline-comments API (`/pulls/N/comments`) is intentionally omitted: the loop posts only top-level comments, so it returns data the loop never creates and only inflates context (and cache-write cost) every round. Add it back only if a human is leaving inline review comments you need to honor.
 
 Check out the PR branch locally so you can make changes:
 ```bash
@@ -25,7 +26,7 @@ If checkout fails, stop and emit `STATUS: BLOCKED` as the very last line.
 
 ## Step 3 — Identify the findings to address
 
-Take the **most recent** `## Code Review` comment posted by `/personal:reviewit` as the set of findings. Also read any prior `## Review Response` comments and inline replies so you do not re-litigate items already resolved or already disputed in an earlier round.
+Take the **most recent** `## Code Review` comment posted by `/personal:reviewit` as the set of findings. Also read any prior `## Review Response` comments and human replies in the thread so you do not re-litigate items already resolved or already disputed in an earlier round.
 
 If there is no `## Code Review` comment at all, there is nothing to address — stop and emit `STATUS: BLOCKED` as the very last line (review hasn't run yet).
 
