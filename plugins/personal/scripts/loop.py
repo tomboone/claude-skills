@@ -141,7 +141,7 @@ def _usage_record(step, model, usage):
     return rec
 
 
-def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None, emit=None, merge=False):
+def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None, emit=None, merge=False, base=None):
     tid = ticket["id"]
     usages = []
 
@@ -149,7 +149,8 @@ def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS,
         if emit:
             emit(label or name)
         effort = (efforts or {}).get(effort_key or name)
-        res = runner(build_claude_cmd(f"/personal:{name} {tid}", model, effort=effort), timeout)
+        suffix = f" --base {base}" if (base and name in ("implementit", "shipit")) else ""
+        res = runner(build_claude_cmd(f"/personal:{name} {tid}{suffix}", model, effort=effort), timeout)
         usages.append(_usage_record(name, model, res.usage))
         return res
 
@@ -324,6 +325,7 @@ def parse_args(argv):
     p.add_argument("--max-rounds", type=int, default=MAX_ROUNDS)
     p.add_argument("--detach", action="store_true")
     p.add_argument("--merge", action="store_true")
+    p.add_argument("--base")
     return p.parse_args(argv)
 
 
@@ -414,6 +416,79 @@ def resolve_repo_label(args, read_claude_md=_read_repo_claude_md, remote_url_fn=
     return f"repo:{name}"
 
 
+WORK_BRANCH_PREFIXES = ("feat/", "fix/")
+
+
+def _current_branch():
+    """Current branch name, or None / 'HEAD' if detached/unavailable."""
+    try:
+        proc = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                              capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def _default_branch():
+    """Repo default branch (origin/HEAD target), or None."""
+    try:
+        proc = subprocess.run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+                              capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode == 0 and proc.stdout.strip():
+        return proc.stdout.strip().split("/", 1)[-1]  # strip 'origin/'
+    return None
+
+
+def _unmerged_release_branches(default_branch):
+    """origin release/* branches not merged into the default branch (basenames), name-sorted."""
+    try:
+        proc = subprocess.run(
+            ["git", "branch", "-r", "--no-merged", f"origin/{default_branch}",
+             "--list", "origin/release/*"],
+            capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if proc.returncode != 0:
+        return []
+    names = []
+    for line in proc.stdout.splitlines():
+        ref = line.strip()
+        if ref.startswith("origin/"):
+            names.append(ref[len("origin/"):])
+    return sorted(names)
+
+
+def resolve_base(args, read_claude_md=_read_repo_claude_md,
+                 current_branch_fn=_current_branch,
+                 default_branch_fn=_default_branch,
+                 unmerged_releases_fn=_unmerged_release_branches,
+                 emit=None):
+    """Resolve the loop's base branch (work-branch base + PR base). See design spec §3.1."""
+    # 1. explicit flag
+    if args.base:
+        return args.base
+    # 2. loop_base: hint in CLAUDE.md
+    for line in read_claude_md().splitlines():
+        if line.strip().lower().startswith("loop_base:"):
+            val = line.split(":", 1)[1].strip()
+            if val:
+                return val
+    # 3. current checked-out branch, if it's a usable integration branch
+    cur = current_branch_fn()
+    if cur and cur != "HEAD" and not cur.startswith(WORK_BRANCH_PREFIXES):
+        return cur
+    # 4. fallback: default branch, rescued by a lone unmerged release/* (logged)
+    default = default_branch_fn() or "main"
+    releases = unmerged_releases_fn(default)
+    if len(releases) == 1:
+        if emit:
+            emit(f"base: auto-selected {releases[0]} (only unmerged release/* branch)")
+        return releases[0]
+    return default
+
+
 def resolve_project(args, read_claude_md=_read_repo_claude_md):
     if args.project:
         return args.project
@@ -471,12 +546,16 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
 
     wave = triage["wave"][: args.limit] if args.limit else triage["wave"]
 
+    base = resolve_base(args, emit=lambda m: print(m, flush=True))
+
     if args.dry_run:
         filt = repo_label if repo_label else "(none — explicit tickets)"
         print(f"Project: {project}. Repo filter: {filt}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
+        print(f"Base branch: {base}")
         for t in wave:
             for step_name in ("implementit", "shipit", "reviewit"):
-                cmd = build_claude_cmd(f"/personal:{step_name} {t['id']}", models[step_name], effort=efforts.get(step_name))
+                suffix = f" --base {base}" if (base and step_name in ("implementit", "shipit")) else ""
+                cmd = build_claude_cmd(f"/personal:{step_name} {t['id']}{suffix}", models[step_name], effort=efforts.get(step_name))
                 print("  would run:", " ".join(cmd))
             print(f"  then loop: reviewit ↔ addressit up to {args.max_rounds} round(s) "
                   f"(re-review model {models['reviewit_rereview']}, effort {efforts.get('reviewit_rereview')})")
@@ -495,7 +574,7 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
     results = []
     for i, t in enumerate(wave, 1):
         emit(f"[{i}/{len(wave)}] {t['id']}")
-        r = run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts, emit=emit, merge=args.merge)
+        r = run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts, emit=emit, merge=args.merge, base=base)
         if r.disposition == "NEEDS_HUMAN":
             emit(f"{r.ticket_id} → NEEDS_HUMAN: {r.reason}")
         elif r.failed_step:

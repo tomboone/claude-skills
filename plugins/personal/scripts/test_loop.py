@@ -674,5 +674,136 @@ class TestFormatSummaryUsage(unittest.TestCase):
         self.assertNotIn("TOTAL", out)
 
 
+class TestResolveBase(unittest.TestCase):
+    def _args(self, *argv):
+        return loop.parse_args(list(argv))
+
+    def test_explicit_flag_wins(self):
+        base = loop.resolve_base(
+            self._args("--base", "release/0.3.0"),
+            read_claude_md=lambda: "loop_base: ignored\n",
+            current_branch_fn=lambda: "main",
+            default_branch_fn=lambda: "main",
+            unmerged_releases_fn=lambda d: [],
+        )
+        self.assertEqual(base, "release/0.3.0")
+
+    def test_claude_md_hint_second(self):
+        base = loop.resolve_base(
+            self._args(),
+            read_claude_md=lambda: "linear_repo: x\nloop_base: release/0.3.0\n",
+            current_branch_fn=lambda: "feat/NEU-1-thing",
+            default_branch_fn=lambda: "main",
+            unmerged_releases_fn=lambda d: [],
+        )
+        self.assertEqual(base, "release/0.3.0")
+
+    def test_current_branch_third(self):
+        base = loop.resolve_base(
+            self._args(),
+            read_claude_md=lambda: "",
+            current_branch_fn=lambda: "release/0.3.0",
+            default_branch_fn=lambda: "main",
+            unmerged_releases_fn=lambda d: ["release/0.3.0"],
+        )
+        self.assertEqual(base, "release/0.3.0")
+
+    def test_current_branch_main_is_respected(self):
+        # Explicit checkout of the default branch is honored; auto-select must NOT override it.
+        base = loop.resolve_base(
+            self._args(),
+            read_claude_md=lambda: "",
+            current_branch_fn=lambda: "main",
+            default_branch_fn=lambda: "main",
+            unmerged_releases_fn=lambda d: ["release/0.3.0"],
+        )
+        self.assertEqual(base, "main")
+
+    def test_work_branch_head_falls_through_to_default(self):
+        base = loop.resolve_base(
+            self._args(),
+            read_claude_md=lambda: "",
+            current_branch_fn=lambda: "fix/NEU-2-bug",
+            default_branch_fn=lambda: "main",
+            unmerged_releases_fn=lambda d: [],
+        )
+        self.assertEqual(base, "main")
+
+    def test_detached_head_falls_through_to_default(self):
+        base = loop.resolve_base(
+            self._args(),
+            read_claude_md=lambda: "",
+            current_branch_fn=lambda: "HEAD",
+            default_branch_fn=lambda: "main",
+            unmerged_releases_fn=lambda d: [],
+        )
+        self.assertEqual(base, "main")
+
+    def test_fallback_auto_selects_lone_unmerged_release(self):
+        logged = []
+        base = loop.resolve_base(
+            self._args(),
+            read_claude_md=lambda: "",
+            current_branch_fn=lambda: "HEAD",          # fallback path
+            default_branch_fn=lambda: "main",
+            unmerged_releases_fn=lambda d: ["release/0.3.0"],
+            emit=logged.append,
+        )
+        self.assertEqual(base, "release/0.3.0")
+        self.assertTrue(any("release/0.3.0" in m for m in logged))
+
+    def test_fallback_keeps_default_when_multiple_releases(self):
+        base = loop.resolve_base(
+            self._args(),
+            read_claude_md=lambda: "",
+            current_branch_fn=lambda: "HEAD",
+            default_branch_fn=lambda: "main",
+            unmerged_releases_fn=lambda d: ["release/0.3.0", "release/0.4.0"],
+        )
+        self.assertEqual(base, "main")
+
+
+class TestBaseThreading(unittest.TestCase):
+    def test_base_flag_parsed(self):
+        self.assertEqual(loop.parse_args(["--base", "release/0.3.0"]).base, "release/0.3.0")
+
+    def test_base_defaults_none(self):
+        self.assertIsNone(loop.parse_args([]).base)
+
+    def test_base_threaded_to_implementit_and_shipit_only(self):
+        prompts = []
+
+        def recording_runner(cmd, timeout):
+            prompts.append(cmd[2])  # build_claude_cmd → ["claude","-p",prompt,...]
+            text = "STATUS: IMPLEMENTED https://github.com/o/r/pull/1 STATUS: APPROVED"
+            return loop.InvocationResult(0, text, False, None)
+
+        loop.run_ticket_pipeline(
+            {"id": "NEU-9", "title": ""}, recording_runner,
+            loop.default_models(), loop.default_timeouts(),
+            efforts=loop.default_efforts(), base="release/0.3.0", merge=False)
+
+        impl = [p for p in prompts if p.startswith("/personal:implementit ")]
+        ship = [p for p in prompts if p.startswith("/personal:shipit ")]
+        review = [p for p in prompts if p.startswith("/personal:reviewit ")]
+        self.assertTrue(impl and impl[0].endswith("--base release/0.3.0"))
+        self.assertTrue(ship and ship[0].endswith("--base release/0.3.0"))
+        self.assertTrue(review and "--base" not in review[0])
+
+    def test_no_base_means_no_flag(self):
+        prompts = []
+
+        def recording_runner(cmd, timeout):
+            prompts.append(cmd[2])
+            text = "STATUS: IMPLEMENTED https://github.com/o/r/pull/1 STATUS: APPROVED"
+            return loop.InvocationResult(0, text, False, None)
+
+        loop.run_ticket_pipeline(
+            {"id": "NEU-9", "title": ""}, recording_runner,
+            loop.default_models(), loop.default_timeouts(),
+            efforts=loop.default_efforts(), base=None, merge=False)
+        self.assertTrue(all("--base" not in p for p in prompts))
+
+
 if __name__ == "__main__":
     unittest.main()
