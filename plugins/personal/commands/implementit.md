@@ -1,5 +1,5 @@
 # Set up the work branch and execute the implementation plan for a Linear ticket.
-# Usage: /personal:implementit {TICKET_ID}
+# Usage: /personal:implementit {TICKET_ID} [--base <branch>]
 
 ## Step 1 — Resolve the docs directory
 
@@ -35,12 +35,20 @@ step is a no-op. Backwards-compatible.
 
 Derive a branch name from the ticket ID and the plan/spec title: `feat/{TICKET_ID}-short-description` (or `fix/` if the ticket is a bug fix). Use the ticket ID exactly as given — don't assume a project prefix.
 
-**Branch from up-to-date `main`.** Sync the base first so each ticket starts from every prior ticket's merged state (fewer downstream conflicts):
+**Branch from the resolved base.** Determine `BASE`:
+1. If invoked with `--base <branch>` (the loop threads this), use it.
+2. Otherwise resolve locally: a `loop_base:` line in the repo `CLAUDE.md`; else the current
+   checked-out branch when it is a real integration branch (not detached, not a `feat/*`/`fix/*`
+   work branch); else the repo default branch (`git symbolic-ref --short refs/remotes/origin/HEAD`,
+   stripped of `origin/`).
+
+Sync the base first so each ticket starts from every prior ticket's merged state, then branch:
 ```bash
-git fetch origin main
-git checkout -b feat/{TICKET_ID}-short-description origin/main
+git fetch origin "$BASE"
+git checkout -b feat/{TICKET_ID}-short-description "origin/$BASE"
 ```
-If a release branch is the appropriate base instead (one exists and is the active release), fetch and branch from `origin/<release-branch>` the same way. In headless mode default to `origin/main`; only ask the user if genuinely ambiguous and a user is present.
+(Use the `fix/` prefix for a bug-fix ticket, per the branch-name rule above.) Do **not** prompt for
+the base in headless mode — the loop always supplies `--base`.
 
 ## Step 5 — Hand off to Superpowers
 

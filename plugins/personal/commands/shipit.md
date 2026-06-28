@@ -1,5 +1,5 @@
 # Commit any uncommitted work, push the branch, and open a PR against the release branch (or the repo's default branch when there is none).
-# Usage: /personal:shipit {TICKET_ID}
+# Usage: /personal:shipit {TICKET_ID} [--base <branch>]
 
 ## Step 1 — Guard rails
 
@@ -33,11 +33,15 @@ Push the current branch to origin if it isn't already up to date.
 
 Resolve the PR base, `BASE`, **without blocking on a question when a sane default exists** — this command runs headlessly under the loop orchestrator, so a prompt to the user hangs the run and produces no PR:
 
-1. Look for branches matching `release/v*` (`git branch --list 'release/v*'`).
-   - **Exactly one** → that's `BASE`.
-   - **More than one** → take the highest version: `git branch --list 'release/v*' | sed 's/^[* ]*//' | sort -V | tail -1`. (Only ask the user if one is genuinely present and the ordering is ambiguous.)
-2. **No `release/v*` branch** → fall back to the repo's default branch (normally `main`): `git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'`, or if that's unset, `git remote show origin | sed -n 's/.*HEAD branch: //p'`. Use that as `BASE`.
-3. Only ask the user if **none** of the above resolves a branch *and* a user is present to answer; in headless mode, default to `main`.
+1. If invoked with `--base <branch>` (the loop threads this), that's `BASE`. Skip the rest.
+2. Otherwise if the repo `CLAUDE.md` or `.claude/CLAUDE.md` contains a `loop_base: <branch>` line, that's `BASE`.
+3. Otherwise look for unmerged release branches matching `release/*`. First resolve `<default>` (the
+   repo default branch): `git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'`
+   (fall back to `git remote show origin | sed -n 's/.*HEAD branch: //p'` if unset). Then:
+   `git branch -r --no-merged "origin/<default>" --list 'origin/release/*'`.
+   - **Exactly one** → strip the `origin/` prefix (`sed 's#^[* ]*origin/##'`) → that's `BASE`.
+   - **More than one** → highest version: `… | sed 's#^[* ]*origin/##' | sort -V | tail -1`.
+4. **No unmerged `release/*` branch** → use `<default>` (resolved above) as `BASE`.
 
 ## Step 6 — Build the PR description
 
