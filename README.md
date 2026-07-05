@@ -134,6 +134,12 @@ plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
 | `--detach` | Background the run: re-launch detached, write stdout/stderr to a timestamped `<repo>/.claude/loop/run-*.log` (self-`.gitignore`d), print a `tail -f` watch command, and return immediately. |
 | `--merge` | Run `mergeit` after the review↔address loop reaches APPROVED. **Off by default** — without it the loop stops at the `READY_FOR_REVIEW` disposition (PR opened and loop-approved, left for a human/team to merge). Use it on repos where auto-merge is wanted; omit it where PRs require team approval. |
 
+**Credentials (`--notify pushover`):** `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` can come from the
+environment or a `.env` file. At startup the loop loads the first file it finds — `$PUSHOVER_ENV_FILE`,
+then `<repo-root>/.env`, then `~/.claude/.env` — but **real environment variables always win** (the
+file only fills gaps). Copy `.env.example` to `.env` (git-ignored) and fill in your values, or just
+`export` the vars in your shell.
+
 **Run flow:** feasibility guard → Linear-MCP triage (returns the wave as JSON) → per-ticket state
 machine (implement → ship → review ↔ address until approved or stalled → merge/stop) → a printed
 summary showing each ticket's **disposition** (`MERGED` / `READY_FOR_REVIEW` / `NEEDS_HUMAN` /

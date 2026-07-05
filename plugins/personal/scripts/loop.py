@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 from collections import namedtuple
 from datetime import datetime, timezone
+from pathlib import Path
 
 InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out", "usage"], defaults=[None])
 TicketResult = namedtuple(
@@ -583,6 +584,63 @@ def run_triage(project, label, repo_label, runner):
     return parse_triage_result(res.result_text)
 
 
+def _parse_dotenv(text):
+    """Parse .env text into {KEY: VALUE} (stdlib only).
+
+    Skips blank lines and `#` comments, ignores lines without `=`, and strips a
+    single pair of surrounding single/double quotes from the value.
+    """
+    out = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        if not key:
+            continue
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+            val = val[1:-1]
+        out[key] = val
+    return out
+
+
+def _dotenv_candidates():
+    """Ordered candidate .env paths; the first that exists is loaded.
+
+    `$PUSHOVER_ENV_FILE` wins if set, then the claude-skills repo root
+    (`<root>/.env`, resolved from this script's location), then a
+    cwd-independent `~/.claude/.env` fallback.
+    """
+    candidates = []
+    override = os.environ.get("PUSHOVER_ENV_FILE")
+    if override:
+        candidates.append(Path(override))
+    candidates.append(Path(__file__).resolve().parents[3] / ".env")
+    candidates.append(Path.home() / ".claude" / ".env")
+    return candidates
+
+
+def load_dotenv(candidates=None, environ=None):
+    """Load the first existing candidate .env into `environ` (default os.environ).
+
+    Real environment variables always win: existing keys are never overwritten,
+    so a shell `export` takes precedence over the file. Returns the Path that was
+    loaded, or None if no candidate file existed.
+    """
+    environ = os.environ if environ is None else environ
+    for path in (candidates if candidates is not None else _dotenv_candidates()):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        for key, val in _parse_dotenv(text).items():
+            environ.setdefault(key, val)
+        return path
+    return None
+
+
 def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibility_guard, notify_fn=notify):
     args = parse_args(argv)
 
@@ -591,6 +649,8 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
         print(f"Loop started (pid {pid}).")
         print(f"Watch: tail -f {log_path}")
         return 0
+
+    load_dotenv()
 
     models = default_models()
     timeouts = default_timeouts()
