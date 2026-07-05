@@ -1,7 +1,9 @@
 import contextlib
 import io
 import os
+import pathlib
 import sys
+import tempfile
 import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import loop
@@ -1044,6 +1046,59 @@ class TestMainNotify(unittest.TestCase):
             )
         self.assertEqual(calls, [])
         self.assertIn("unknown backend", err.getvalue())
+
+
+class TestDotenv(unittest.TestCase):
+    def test_parse_basic(self):
+        self.assertEqual(loop._parse_dotenv("A=1\nB = two\n"), {"A": "1", "B": "two"})
+
+    def test_parse_skips_comments_and_blanks(self):
+        self.assertEqual(loop._parse_dotenv("# c\n\nA=1\n"), {"A": "1"})
+
+    def test_parse_strips_one_pair_of_quotes(self):
+        self.assertEqual(loop._parse_dotenv("A=\"q\"\nB='s'\n"), {"A": "q", "B": "s"})
+
+    def test_parse_ignores_lines_without_equals(self):
+        self.assertEqual(loop._parse_dotenv("novalue\nA=1"), {"A": "1"})
+
+    def test_parse_keeps_inner_equals(self):
+        self.assertEqual(loop._parse_dotenv("A=b=c"), {"A": "b=c"})
+
+    def _write_env(self, text):
+        f = tempfile.NamedTemporaryFile("w", suffix=".env", delete=False)
+        f.write(text)
+        f.close()
+        self.addCleanup(os.unlink, f.name)
+        return pathlib.Path(f.name)
+
+    def test_load_sets_missing_keys(self):
+        path = self._write_env("PUSHOVER_APP_TOKEN=tok\n")
+        environ = {}
+        used = loop.load_dotenv(candidates=[path], environ=environ)
+        self.assertEqual(used, path)
+        self.assertEqual(environ["PUSHOVER_APP_TOKEN"], "tok")
+
+    def test_real_env_wins(self):
+        path = self._write_env("PUSHOVER_APP_TOKEN=fromfile\n")
+        environ = {"PUSHOVER_APP_TOKEN": "fromenv"}
+        loop.load_dotenv(candidates=[path], environ=environ)
+        self.assertEqual(environ["PUSHOVER_APP_TOKEN"], "fromenv")
+
+    def test_first_existing_candidate_wins(self):
+        missing = pathlib.Path("/nonexistent/does-not-exist.env")
+        path = self._write_env("K=real\n")
+        environ = {}
+        used = loop.load_dotenv(candidates=[missing, path], environ=environ)
+        self.assertEqual(used, path)
+        self.assertEqual(environ["K"], "real")
+
+    def test_returns_none_when_no_candidate_exists(self):
+        environ = {}
+        used = loop.load_dotenv(
+            candidates=[pathlib.Path("/nonexistent/x.env")], environ=environ
+        )
+        self.assertIsNone(used)
+        self.assertEqual(environ, {})
 
 
 if __name__ == "__main__":
