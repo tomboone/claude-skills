@@ -61,6 +61,7 @@ def parse_triage_result(result_text):
         "project": last.get("project"),
         "wave": last.get("wave", []),
         "held": last.get("held", []),
+        "done": last.get("done", []),
     }
 
 
@@ -94,6 +95,7 @@ def parse_merge_status(result_text):
 
 
 MAX_ROUNDS = 2
+MAX_WAVES = 50  # safety backstop for --waves; real projects have far fewer waves than this
 
 _PR_RE = re.compile(r"https://github\.com/[^\s)]+/pull/\d+")
 
@@ -354,6 +356,20 @@ TRIAGE_PROMPT = (
 )
 
 
+EXPLICIT_WAVE_PROMPT = (
+    "Using the Linear MCP, check the current state of these specific tickets: {ids}. For each "
+    "one: if it is already Done, put it in 'done' — nothing left to do. Else if it is un-started "
+    "(status Todo or Backlog, not In Progress/In Review/Done) AND every one of its blockedBy "
+    "blockers has status Done, put it in 'wave'. Otherwise (blocked on an un-done blocker, or "
+    "already In Progress/In Review), put it in 'held' with the IDs of whichever blockers are not "
+    "yet Done. Only consider the tickets listed — do not search for others. Return ONLY a JSON "
+    "object as your final message, no prose:\n"
+    '{{"project": "{project}", "wave": [{{"id": "...", "title": "..."}}], '
+    '"held": [{{"id": "...", "title": "...", "waiting_on": ["..."]}}], '
+    '"done": [{{"id": "...", "title": "..."}}]}}'
+)
+
+
 def _loop_log_path(now):
     # CWD-relative, like _read_repo_claude_md/resolve_project: the loop is invoked
     # from the repo root, so this resolves to <repo>/.claude/loop/run-*.log.
@@ -395,6 +411,13 @@ def parse_args(argv):
     p.add_argument("--detach", action="store_true")
     p.add_argument("--merge", action="store_true")
     p.add_argument("--base")
+    p.add_argument(
+        "--waves", action="store_true",
+        help="Iterate wave-by-wave (re-discovering newly-unblocked tickets after each wave's "
+             "merges) until the whole project — or the --tickets list — is done, or a wave makes "
+             "no progress. Requires --merge: a later wave can only unblock once the prior wave's "
+             "tickets are actually merged.",
+    )
     return p.parse_args(argv)
 
 
@@ -584,6 +607,17 @@ def run_triage(project, label, repo_label, runner):
     return parse_triage_result(res.result_text)
 
 
+def run_explicit_wave(project, ticket_ids, runner):
+    """Partition an explicit ticket-ID list (--tickets --waves) into wave/held/done by current
+    Linear state. Only called when --waves is set — plain --tickets trusts the caller and skips
+    this check entirely (see main())."""
+    res = runner(build_claude_cmd(
+        EXPLICIT_WAVE_PROMPT.format(project=project, ids=", ".join(ticket_ids)), "sonnet"), 300)
+    if res.timed_out or res.returncode != 0:
+        raise SystemExit("Explicit-ticket wave check failed.")
+    return parse_triage_result(res.result_text)
+
+
 def _parse_dotenv(text):
     """Parse .env text into {KEY: VALUE} (stdlib only).
 
@@ -641,8 +675,15 @@ def load_dotenv(candidates=None, environ=None):
     return None
 
 
-def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibility_guard, notify_fn=notify):
+def main(argv, runner=subprocess_runner, triage_fn=run_triage, explicit_wave_fn=run_explicit_wave,
+         guard_fn=feasibility_guard, notify_fn=notify):
     args = parse_args(argv)
+
+    if args.waves and not args.merge:
+        print("--waves requires --merge: a later wave can only unblock once the prior wave's "
+              "tickets are actually merged (Linear's blockedBy check keys on status Done, which "
+              "only happens on merge).", file=sys.stderr)
+        return 2
 
     if args.detach:
         pid, log_path = _spawn_detached(argv)
@@ -670,18 +711,26 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
         return 0
 
     project = resolve_project(args)
-    if args.tickets:
-        triage = {"project": project, "wave": [{"id": t, "title": ""} for t in args.tickets], "held": []}
-        repo_label = None
-    else:
-        repo_label = resolve_repo_label(args)
-        triage = triage_fn(project, args.label, repo_label, runner)
-
-    wave = triage["wave"][: args.limit] if args.limit else triage["wave"]
-
+    repo_label = None if args.tickets else resolve_repo_label(args)
     base = resolve_base(args, emit=lambda m: print(m, flush=True))
 
+    def get_wave(candidates):
+        """Compute one round's {wave, held, done}. `candidates` is the remaining explicit ticket
+        IDs (only meaningful in --tickets mode); ignored in label-triage mode, which discovers
+        fresh from Linear every round."""
+        if args.tickets:
+            if not args.waves:
+                # Plain --tickets (no --waves): trust the caller, skip blocker-checking entirely.
+                return {"project": project, "wave": [{"id": t, "title": ""} for t in candidates],
+                        "held": [], "done": []}
+            if not candidates:
+                return {"project": project, "wave": [], "held": [], "done": []}
+            return explicit_wave_fn(project, candidates, runner)
+        return triage_fn(project, args.label, repo_label, runner)
+
     if args.dry_run:
+        preview = get_wave(list(args.tickets) if args.tickets else None)
+        wave = preview["wave"][: args.limit] if args.limit else preview["wave"]
         filt = repo_label if repo_label else "(none — explicit tickets)"
         print(f"Project: {project}. Repo filter: {filt}. Wave ({len(wave)}): {[t['id'] for t in wave]}")
         print(f"Base branch: {base}")
@@ -699,29 +748,71 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, guard_fn=feasibil
                 print("  would run:", " ".join(cmd))
             else:
                 print("  then stop on approval → READY_FOR_REVIEW (merge disabled; pass --merge to auto-merge)")
-        print(format_summary([], triage["held"]))
+        if args.waves:
+            print(f"--waves: would repeat discovery + this cycle after each wave's merges, "
+                  f"until done or a wave makes no progress (cap {MAX_WAVES} waves).")
+        print(format_summary([], preview["held"]))
         return 0
 
     def emit(msg):
         print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] {msg}", flush=True)
 
-    emit(f"wave: {len(wave)} ticket(s)")
-    results = []
-    for i, t in enumerate(wave, 1):
-        emit(f"[{i}/{len(wave)}] {t['id']}")
-        r = run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts, emit=emit, merge=args.merge, base=base)
-        if r.disposition == "NEEDS_HUMAN":
-            emit(f"{r.ticket_id} → NEEDS_HUMAN: {r.reason}")
-        elif r.failed_step:
-            emit(f"{r.ticket_id} → FAILED at {r.failed_step}")
-        else:
-            emit(f"{r.ticket_id} → {r.disposition}")
-        results.append(r)
-        if backend:
-            notify_fn(backend, *_ticket_notification(r))
-    print(format_summary(results, triage["held"]))
+    excluded_ids = set()  # merged or terminally-failed this run — never retried within this run
+    all_results = []
+    final_held = []
+    stop_reason = None
+    candidates = list(args.tickets) if args.tickets else None
+
+    wave_num = 0
+    while True:
+        wave_num += 1
+        triage = get_wave(candidates)
+        final_held = triage["held"]
+        excluded_ids.update(d["id"] for d in triage.get("done", []))
+        raw_wave = [t for t in triage["wave"] if t["id"] not in excluded_ids]
+        wave = raw_wave[: args.limit] if args.limit else raw_wave
+
+        if not wave:
+            stop_reason = "stalled — remaining tickets are blocked" if final_held else "complete"
+            break
+
+        emit(f"wave {wave_num}: {len(wave)} ticket(s)" if args.waves else f"wave: {len(wave)} ticket(s)")
+        wave_merged = False
+        for i, t in enumerate(wave, 1):
+            emit(f"[{i}/{len(wave)}] {t['id']}")
+            r = run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts, emit=emit, merge=args.merge, base=base)
+            if r.disposition == "NEEDS_HUMAN":
+                emit(f"{r.ticket_id} → NEEDS_HUMAN: {r.reason}")
+                excluded_ids.add(r.ticket_id)
+            elif r.failed_step:
+                emit(f"{r.ticket_id} → FAILED at {r.failed_step}")
+                excluded_ids.add(r.ticket_id)
+            else:
+                emit(f"{r.ticket_id} → {r.disposition}")
+                if r.disposition == "MERGED":
+                    wave_merged = True
+                    excluded_ids.add(r.ticket_id)
+            all_results.append(r)
+            if backend:
+                notify_fn(backend, *_ticket_notification(r))
+
+        if args.tickets:
+            candidates = [t for t in candidates if t not in excluded_ids]
+
+        if not args.waves:
+            break
+        if not wave_merged:
+            stop_reason = "no progress this wave (nothing merged) — stopping rather than repeat a stuck ticket forever"
+            break
+        if wave_num >= MAX_WAVES:
+            stop_reason = f"hit the {MAX_WAVES}-wave safety cap"
+            break
+
+    print(format_summary(all_results, final_held))
+    if stop_reason:
+        print(f"\n{stop_reason}.")
     if backend:
-        notify_fn(backend, *_summary_notification(results))
+        notify_fn(backend, *_summary_notification(all_results))
     return 0
 
 

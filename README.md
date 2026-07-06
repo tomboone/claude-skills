@@ -2,9 +2,9 @@
 
 Personal Claude Code configuration repo. It holds two things:
 
-1. **The `personal` plugin** — a Linear-driven, Superpowers-backed workflow for taking a project
-   from idea → planned tickets → implemented, reviewed, **merged** PRs, plus a headless loop that
-   drives the whole cycle unattended.
+1. **The `personal` plugin** — a Linear-driven workflow, built on Matt Pocock's engineering skills,
+   for taking a project from idea → planned tickets → implemented, reviewed, **merged** PRs, plus a
+   headless loop that drives the whole cycle unattended.
 2. **The canonical global `CLAUDE.md`** (`claude-global.md`) — global preferences synced across
    machines via a thin `@`-import in `~/.claude/CLAUDE.md`.
 
@@ -21,7 +21,9 @@ claude-skills/
 │   ├── spec-and-plan-convention.md         # where specs & plans live on disk
 │   ├── pr-resolution-convention.md         # how a command resolves a PR from a ticket ID
 │   └── review-context-convention.md        # the cached review-context bundle reviewit/addressit share
-└── .claude/docs/superpowers/               # design specs & plans for this repo's own work
+└── .claude/docs/                           # design specs & plans for this repo's own work
+    └── superpowers/                         # retired layout (older tickets); new docs go to
+                                              # .claude/docs/{specs,plans}/, created lazily
 ```
 
 ## Installation
@@ -55,12 +57,12 @@ The plugin is organized into three layers, all keyed on a Linear ticket ID:
 
 | Command | Usage | What it does |
 |---|---|---|
-| `/projectit` | `[--dry-run] ["idea"]` | **Planning (project shaping).** Turns an idea into a Linear project — description, milestones (each with a **Shared contracts** section), user stories, and work tickets — and creates them in Linear. Does **not** generate specs/plans or apply labels; per-ticket planning happens later with `/planit`. Multi-repo projects tag each ticket with a `**Target repo:**` line. |
-| `/planit` | `{TICKET_ID}` | **Planning (per-ticket, just-in-time).** Researches a single ticket — including its parent milestone's shared contracts and any already-merged dependencies' shipped specs/code — then, if no sufficient spec exists, hands off to Superpowers brainstorming + plan-writing and saves spec/plan by convention so `/implementit` finds them by ticket ID. |
-| `/implementit` | `{TICKET_ID}` | Creates the work branch and executes the ticket's plan via Superpowers `subagent-driven-development` (fresh subagent per task, two-stage review, final whole-branch review). Emits `STATUS: IMPLEMENTED`. |
+| `/projectit` | `[--dry-run] ["idea"]` | **Planning (project shaping).** Runs a `/grilling` + `/domain-modeling` session on the idea, writes a project-wide spec to disk, then turns it into a Linear project — description (with a pointer to the spec), milestones (each with a **Shared contracts** section), user stories, and work tickets — and creates them in Linear. Applies no labels; per-ticket planning happens later with `/planit`. Multi-repo projects tag each ticket with a `**Target repo:**` line. |
+| `/planit` | `{TICKET_ID}` | **Planning (per-ticket, just-in-time).** Researches a single ticket — including its parent milestone's shared contracts, the project-wide spec (if any), and any already-merged dependencies' shipped specs/code — then, if that's not already sufficient, runs a `/grilling` + `/domain-modeling` session and saves the resulting spec by convention so `/implementit` finds it by ticket ID. |
+| `/implementit` | `{TICKET_ID}` | Creates the work branch and executes the ticket's spec/plan via `/implement` (single-pass implementation, with an internal `/code-review --fix` pass before shipping). Emits `STATUS: IMPLEMENTED`. |
 | `/shipit` | `{TICKET_ID}` | Commits any outstanding work (Conventional Commit + ticket parenthetical), pushes, and opens a PR against the release branch. Fits the repo's PR template if it has one. |
-| `/reviewit` | `{TICKET_ID}` | Reviews the PR via the Superpowers code-reviewer, **building on any prior review rounds** (reads the existing review thread so re-reviews don't re-flag resolved items), posts findings as a `## Code Review` comment, and emits `STATUS: APPROVED` / `STATUS: CHANGES_REQUESTED`. |
-| `/addressit` | `{TICKET_ID}` | Responds to `/reviewit`'s latest findings via Superpowers `receiving-code-review`: implements valid fixes (testing as it goes), **pushes back with reasoning on findings that are wrong / out of scope / conflict with the spec**, pushes fixes to the PR branch, posts a `## Review Response` comment, and emits `STATUS: ADDRESSED` / `STATUS: PUSHED_BACK` / `STATUS: BLOCKED`. |
+| `/reviewit` | `{TICKET_ID}` | Reviews the PR via `/review`, **building on any prior review rounds** (reads the existing review thread so re-reviews don't re-flag resolved items), posts findings as a `## Code Review` comment (Standards + Spec axes), and emits `STATUS: APPROVED` / `STATUS: CHANGES_REQUESTED`. |
+| `/addressit` | `{TICKET_ID}` | Responds to `/reviewit`'s latest findings: implements valid fixes (testing as it goes), **pushes back with reasoning on findings that are wrong / out of scope / conflict with the spec**, pushes fixes to the PR branch, posts a `## Review Response` comment, and emits `STATUS: ADDRESSED` / `STATUS: PUSHED_BACK` / `STATUS: BLOCKED`. |
 | `/mergeit` | `{TICKET_ID}` | Waits for CI, squash-merges the PR, deletes the branch, and syncs `main`. Emits `STATUS: MERGED` / `STATUS: MERGE_BLOCKED`. |
 
 ### The two entry points
@@ -77,12 +79,15 @@ owns status transitions based on branch/PR activity.
 ## The autonomous loop
 
 `plugins/personal/scripts/loop.py` is a headless orchestrator (Python 3, standard library only)
-that drives the commands non-interactively via `claude -p`. Per run it processes one wave of
+that drives the commands non-interactively via `claude -p`. By default it processes one wave of
 `loop-ready`-labelled tickets whose blockers are all `Done`, driving each ticket all the way to a
 merged PR before starting the next — so each new branch roots on an up-to-date `main` and downstream
-conflicts shrink. Note that `/projectit` no longer plans tickets or applies labels, so to use the
-loop you feed it tickets you've already planned with `/planit` and marked `loop-ready` yourself (or
-pass them explicitly via `--tickets`).
+conflicts shrink. Pass `--waves` to keep going across an entire project instead: after each wave's
+merges, it re-discovers whatever just became unblocked and runs that as the next wave, repeating
+until nothing is left, a wave makes no progress, or the safety cap is hit (see `--waves` below).
+Note that `/projectit` no longer plans tickets or applies labels, so to use the loop you feed it
+tickets you've already planned with `/planit` and marked `loop-ready` yourself (or pass them
+explicitly via `--tickets`).
 
 ### Per-ticket state machine
 
@@ -109,7 +114,8 @@ implementit → shipit → ┌─ reviewit ──→ APPROVED ──[--merge]─
   the loop moves on.
 
 Re-run the loop as tickets merge to pick up the next newly-unblocked wave (tickets whose blockers
-are now `Done`).
+are now `Done`) — or pass `--waves` (with `--merge`) to have one run do that automatically until
+the project (or `--tickets` list) is complete.
 
 ### Usage
 
@@ -118,21 +124,23 @@ Run it from inside the target app's repo (so file reads and git operations resol
 ```bash
 plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
                                  [--tickets ID ...] [--dry-run] [--check] \
-                                 [--limit N] [--notify [backend]] [--max-rounds N] [--detach] [--merge]
+                                 [--limit N] [--notify [backend]] [--max-rounds N] [--detach] \
+                                 [--merge] [--waves]
 ```
 
 | Flag | Effect |
 |---|---|
 | `--project <name>` | Override the project; otherwise inferred from the repo's `linear_initiative:` CLAUDE.md hint. |
 | `--label <name>` | Ready-marker label to triage on (default `loop-ready`). |
-| `--tickets ID …` | Bypass triage with an explicit ticket list. |
-| `--dry-run` | Run read-only triage and print the wave + the exact `claude -p` commands (including the bounded review↔address step and the merge/stop step) without executing. |
+| `--tickets ID …` | Bypass triage with an explicit ticket list. Without `--waves`, blocker status is never checked — the given IDs are trusted and run as-is. |
+| `--dry-run` | Run read-only triage and print the wave + the exact `claude -p` commands (including the bounded review↔address step and the merge/stop step) without executing. With `--waves`, only wave 1 is previewed (later waves depend on runtime state). |
 | `--check` | Run only the feasibility guard (verifies `claude -p` + Linear/GitHub MCP are reachable). |
-| `--limit N` | Cap the wave size. |
+| `--limit N` | Cap the wave size (applies per wave when `--waves` is set). |
 | `--notify [backend]` | Send a notification as each ticket finishes (with its final disposition) and once at the end of the run. Bare `--notify` posts a native **macOS** banner; `--notify pushover` sends via **Pushover** (requires `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` env vars). Off by default. Missing credentials or an unknown backend fail silently — the loop is never affected. |
 | `--max-rounds N` | Cap the review ↔ address rounds per ticket (default 2); exhausting them stalls the ticket as `NEEDS_HUMAN`. |
 | `--detach` | Background the run: re-launch detached, write stdout/stderr to a timestamped `<repo>/.claude/loop/run-*.log` (self-`.gitignore`d), print a `tail -f` watch command, and return immediately. |
 | `--merge` | Run `mergeit` after the review↔address loop reaches APPROVED. **Off by default** — without it the loop stops at the `READY_FOR_REVIEW` disposition (PR opened and loop-approved, left for a human/team to merge). Use it on repos where auto-merge is wanted; omit it where PRs require team approval. |
+| `--waves` | Iterate wave-by-wave — after each wave's merges, re-discover whatever just became unblocked (via label re-triage, or via a Linear blocker-check scoped to the `--tickets` list) and run it as the next wave. Repeats until a wave comes back empty (project/list **complete**, or **stalled** if anything remains **held**), a wave merges nothing at all (**stopped — no progress**, so a stuck ticket is never retried forever within the run), or a 50-wave safety cap is hit. **Requires `--merge`** — a later wave can only unblock once the prior wave's tickets are actually `Done`, which only happens on merge. |
 
 **Credentials (`--notify pushover`):** `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` can come from the
 environment or a `.env` file. At startup the loop loads the first file it finds — `$PUSHOVER_ENV_FILE`,
@@ -192,8 +200,9 @@ Several commands share on-disk conventions so they behave identically on every m
   - **`specs_dir` in a project's `CLAUDE.md`** overrides everything.
   - Otherwise: **umbrella** layout (a non-git folder holding sibling repos) → `<umbrella>/docs/`;
     **single repo** → `<repo>/.claude/docs/`.
-  - Specs → `<docs>/superpowers/specs/`, plans → `<docs>/superpowers/plans/`, filenames include the
-    ticket ID (`<TICKET-ID>-<slug>.md`).
+  - Specs → `<docs>/specs/`, plans → `<docs>/plans/`, filenames include the
+    ticket ID (`<TICKET-ID>-<slug>.md`). Older tickets may still use the retired
+    `<docs>/superpowers/{specs,plans}/` layout — commands check both.
 - **[`pr-resolution-convention.md`](plugins/personal/pr-resolution-convention.md)** — how
   `/reviewit`, `/addressit`, and `/mergeit` resolve a `PR_NUMBER` from a ticket ID (head branch, then
   title fallback).

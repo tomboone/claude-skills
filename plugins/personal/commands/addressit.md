@@ -30,9 +30,9 @@ Take the **most recent** `## Code Review` comment posted by `/personal:reviewit`
 
 If there is no `## Code Review` comment at all, there is nothing to address — stop and emit `STATUS: BLOCKED` as the very last line (review hasn't run yet).
 
-## Step 4 — Evaluate and act (Superpowers receiving-code-review)
+## Step 4 — Evaluate and act
 
-Invoke the `superpowers:receiving-code-review` skill and apply it to each finding, using the context bundle (Linear intent + spec/plan) and the live diff as ground truth:
+For each finding in the most recent `## Code Review` comment, using the context bundle (Linear intent + spec/plan) and the live diff as ground truth:
 
 - **Verify before implementing.** Check each finding against codebase reality and the ticket's intent.
 - **Implement valid fixes** one at a time; test each as you go.

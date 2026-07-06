@@ -29,9 +29,21 @@
 
 ## Phase 1 — Project description  ■ gate
 
-Invoke `superpowers:brainstorming` framed on the idea + initiative context to produce a thorough
-project description (purpose, scope, goals). **■ Gate:** user approves. **Hold the approved
-description** for the Phase-3 creation batch — do not write to Linear yet.
+Run a `/grilling` session, using `/domain-modeling` alongside it, framed on the idea + initiative
+context to produce a thorough project description (purpose, scope, goals) — updating `CONTEXT.md`
+and any ADRs inline as decisions crystallize. **■ Gate:** user approves.
+
+Once approved, resolve `DOCS_DIR` for the repo `/personal:projectit` is being run in (per
+`spec-and-plan-convention.md`), then write a **project-wide spec** to
+`DOCS_DIR/specs/<project-slug>-project-spec.md` (`<project-slug>` = hyphenated project name;
+create the folder if missing) capturing the full grilling session's outcome — not just the short
+paragraph destined for Linear's project description below. This is what lets
+`/personal:planit`'s sufficiency check pass immediately for every ticket in the project, without a
+fresh per-ticket interview, when the project-shaping pass was thorough enough to cover it. Record
+its path as `PROJECT_SPEC`.
+
+**Hold the approved one-paragraph description** (for Linear's `project.description`) **and
+`PROJECT_SPEC`'s path** for the Phase-3 creation batch — do not write to Linear yet.
 
 ## Phase 2 — Milestones + shared contracts  ■ gate
 
@@ -58,7 +70,7 @@ it at the gate. Stories get no repo assignment. Single-repo projects: omit targe
 writes happen** — nothing was written in Phases 0–2.
 
 On approval, create top-down in one batch (dry-run prints each call instead):
-1. **Project:** if creating new, `save_project(name=<PROJECT_TO_CREATE>, addTeams=[<team>], addInitiatives=[<initiative>], description=<held Phase-1 description>)`; if reusing, `save_project(id=PROJECT, description=<held Phase-1 description>)`. Record `PROJECT`.
+1. **Project:** append a `**Project spec:** <PROJECT_SPEC path>` line to the held Phase-1 description. If creating new, `save_project(name=<PROJECT_TO_CREATE>, addTeams=[<team>], addInitiatives=[<initiative>], description=<description + Project spec line>)`; if reusing, `save_project(id=PROJECT, description=<description + Project spec line>)`. Record `PROJECT`.
 2. **Milestones:** for each held milestone, `save_milestone(project=PROJECT, name=<name>, description=<goal + Shared contracts section>)`.
 3. **Stories:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, description=<story + acceptance criteria>)`. Record each identifier. **No label.**
 4. **Tickets:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, parentId=<story-id>, description=<intent; for multi-repo projects prepend a "**Target repo:** <name>" line>)`.

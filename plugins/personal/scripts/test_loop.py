@@ -30,6 +30,12 @@ class TestParseTriageResult(unittest.TestCase):
         out = loop.parse_triage_result('{"project": "p"}')
         self.assertEqual(out["wave"], [])
         self.assertEqual(out["held"], [])
+        self.assertEqual(out["done"], [])
+
+    def test_done_key_parsed_when_present(self):
+        text = '{"project": "p", "wave": [], "held": [], "done": [{"id": "A-1", "title": "t"}]}'
+        out = loop.parse_triage_result(text)
+        self.assertEqual(out["done"], [{"id": "A-1", "title": "t"}])
 
     def test_no_json_raises(self):
         with self.assertRaises(ValueError):
@@ -1099,6 +1105,214 @@ class TestDotenv(unittest.TestCase):
         )
         self.assertIsNone(used)
         self.assertEqual(environ, {})
+
+
+class TestRunExplicitWave(unittest.TestCase):
+    def test_formats_prompt_and_parses_result(self):
+        calls = []
+
+        def runner(cmd, timeout):
+            calls.append(cmd)
+            return loop.InvocationResult(
+                0, '{"project": "p", "wave": [{"id": "A-1", "title": "t"}], "held": [], "done": []}', False)
+
+        out = loop.run_explicit_wave("p", ["A-1", "A-2"], runner)
+        self.assertEqual(out["wave"], [{"id": "A-1", "title": "t"}])
+        prompt = calls[0][2]
+        self.assertIn("A-1, A-2", prompt)
+        self.assertIn("p", prompt)
+
+    def test_raises_on_failure(self):
+        with self.assertRaises(SystemExit):
+            loop.run_explicit_wave("p", ["A-1"], lambda cmd, timeout: loop.InvocationResult(1, "", False))
+
+
+class TestWavesRequiresMerge(unittest.TestCase):
+    def test_waves_without_merge_errors_before_anything_runs(self):
+        def boom(*a, **k):
+            raise AssertionError("should not run")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            rc = loop.main(
+                ["--project", "p", "--repo", "r", "--waves"],
+                runner=boom,
+                guard_fn=boom,
+            )
+        self.assertEqual(rc, 2)
+        self.assertIn("--waves requires --merge", buf.getvalue())
+
+    def test_waves_with_merge_passes_validation(self):
+        wave_seq = iter([
+            {"project": "p", "wave": [], "held": [], "done": []},
+        ])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = loop.main(
+                ["--project", "p", "--repo", "r", "--waves", "--merge"],
+                runner=lambda cmd, timeout: loop.InvocationResult(0, "", False),
+                triage_fn=lambda project, label, repo_label, runner: next(wave_seq),
+                guard_fn=lambda runner: (True, "ok"),
+            )
+        self.assertEqual(rc, 0)
+        self.assertIn("complete", buf.getvalue())
+
+
+def _merged_ticket_calls():
+    """Scripted runner responses for one ticket that sails straight through to MERGED."""
+    return [
+        loop.InvocationResult(0, "implemented\nSTATUS: IMPLEMENTED", False),
+        loop.InvocationResult(0, "PR https://github.com/o/r/pull/7", False),
+        loop.InvocationResult(0, "STATUS: APPROVED", False),
+        loop.InvocationResult(0, "STATUS: MERGED", False),
+    ]
+
+
+class TestMainWavesLabelMode(unittest.TestCase):
+    def test_stops_when_a_wave_is_empty_and_nothing_held(self):
+        """Label-triage mode: empty wave + no held tickets means the project is complete."""
+        wave_seq = iter([
+            {"project": "p", "wave": [{"id": "A-1", "title": "t"}], "held": [], "done": []},
+            {"project": "p", "wave": [], "held": [], "done": []},
+        ])
+        runner = make_runner(_merged_ticket_calls())
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = loop.main(
+                ["--project", "p", "--repo", "r", "--waves", "--merge"],
+                runner=runner,
+                triage_fn=lambda project, label, repo_label, runner: next(wave_seq),
+                guard_fn=lambda runner: (True, "ok"),
+            )
+        self.assertEqual(rc, 0)
+        out = buf.getvalue()
+        self.assertIn("wave 1:", out)
+        # round 2's wave came back empty, so no "wave 2:" processing line is emitted —
+        # only the final stop reason:
+        self.assertNotIn("wave 2:", out)
+        self.assertIn("complete", out)
+        self.assertIn("MERGED", out)
+
+    def test_stops_when_wave_is_empty_but_something_is_held(self):
+        wave_seq = iter([
+            {"project": "p", "wave": [], "held": [{"id": "A-2", "title": "t", "waiting_on": ["A-9"]}], "done": []},
+        ])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = loop.main(
+                ["--project", "p", "--repo", "r", "--waves", "--merge"],
+                runner=lambda cmd, timeout: loop.InvocationResult(0, "", False),
+                triage_fn=lambda project, label, repo_label, runner: next(wave_seq),
+                guard_fn=lambda runner: (True, "ok"),
+            )
+        self.assertEqual(rc, 0)
+        self.assertIn("stalled", buf.getvalue())
+
+    def test_stops_when_a_wave_makes_no_progress(self):
+        """A ticket that fails outright (no MERGED result) must not be retried forever."""
+        wave_seq = iter([
+            {"project": "p", "wave": [{"id": "A-1", "title": "t"}], "held": [], "done": []},
+            {"project": "p", "wave": [{"id": "A-1", "title": "t"}], "held": [], "done": []},
+        ])
+        runner = make_runner([loop.InvocationResult(1, "", False)])  # implementit fails outright
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = loop.main(
+                ["--project", "p", "--repo", "r", "--waves", "--merge"],
+                runner=runner,
+                triage_fn=lambda project, label, repo_label, runner: next(wave_seq),
+                guard_fn=lambda runner: (True, "ok"),
+            )
+        self.assertEqual(rc, 0)
+        out = buf.getvalue()
+        self.assertEqual(out.count("wave 1:"), 1)  # only one round ran, never a "wave 2:"
+        self.assertIn("no progress", out)
+        # a failed ticket is excluded from being retried even if triage would resurface it:
+        self.assertEqual(len(runner.calls["cmds"]), 1)
+
+    def test_hits_max_waves_safety_cap(self):
+        """Every round merges a fresh ticket forever — the cap must still terminate the loop."""
+        import itertools
+        import unittest.mock
+
+        def infinite_waves():
+            for n in itertools.count(1):
+                yield {"project": "p", "wave": [{"id": f"A-{n}", "title": "t"}], "held": [], "done": []}
+        gen = infinite_waves()
+
+        runner = make_runner([r for _ in range(10) for r in _merged_ticket_calls()])
+        buf = io.StringIO()
+        with unittest.mock.patch("loop.MAX_WAVES", 3):
+            with contextlib.redirect_stdout(buf):
+                rc = loop.main(
+                    ["--project", "p", "--repo", "r", "--waves", "--merge"],
+                    runner=runner,
+                    triage_fn=lambda project, label, repo_label, runner: next(gen),
+                    guard_fn=lambda runner: (True, "ok"),
+                )
+        self.assertEqual(rc, 0)
+        self.assertIn("wave 3:", buf.getvalue())
+        self.assertNotIn("wave 4:", buf.getvalue())
+        self.assertIn("safety cap", buf.getvalue())
+
+
+class TestMainWavesTicketsMode(unittest.TestCase):
+    def test_plain_tickets_without_waves_never_calls_explicit_wave_fn(self):
+        runner = make_runner(_merged_ticket_calls())
+        buf = io.StringIO()
+
+        def boom(project, ids, runner):
+            raise AssertionError("explicit_wave_fn should not be called without --waves")
+
+        with contextlib.redirect_stdout(buf):
+            rc = loop.main(
+                ["--project", "p", "--tickets", "A-1", "--merge"],
+                runner=runner,
+                explicit_wave_fn=boom,
+                guard_fn=lambda runner: (True, "ok"),
+            )
+        self.assertEqual(rc, 0)
+        self.assertIn("MERGED", buf.getvalue())
+
+    def test_tickets_with_waves_shrinks_candidates_across_rounds(self):
+        """A-1 merges in round 1; round 2's explicit_wave_fn call must only ask about A-2."""
+        seen_candidate_sets = []
+
+        def explicit_wave_fn(project, ids, runner):
+            seen_candidate_sets.append(list(ids))
+            if "A-1" in ids:
+                return {"project": project, "wave": [{"id": "A-1", "title": "t"}], "held": [], "done": []}
+            return {"project": project, "wave": [{"id": "A-2", "title": "t"}], "held": [], "done": []}
+
+        runner = make_runner(_merged_ticket_calls() + _merged_ticket_calls())
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = loop.main(
+                ["--project", "p", "--tickets", "A-1", "A-2", "--waves", "--merge"],
+                runner=runner,
+                explicit_wave_fn=explicit_wave_fn,
+                guard_fn=lambda runner: (True, "ok"),
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(seen_candidate_sets[0], ["A-1", "A-2"])
+        self.assertEqual(seen_candidate_sets[1], ["A-2"])  # A-1 excluded after merging
+        self.assertIn("complete", buf.getvalue())
+
+    def test_tickets_with_waves_does_not_call_resolve_repo_label(self):
+        import unittest.mock
+        with unittest.mock.patch("loop.resolve_repo_label", side_effect=SystemExit("should not be called")):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = loop.main(
+                    ["--project", "p", "--tickets", "A-1", "--waves", "--merge"],
+                    runner=make_runner(_merged_ticket_calls()),
+                    explicit_wave_fn=lambda project, ids, runner: {
+                        "project": project, "wave": [{"id": t, "title": ""} for t in ids],
+                        "held": [], "done": [],
+                    },
+                    guard_fn=lambda runner: (True, "ok"),
+                )
+        self.assertEqual(rc, 0)
 
 
 if __name__ == "__main__":

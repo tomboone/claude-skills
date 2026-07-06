@@ -13,12 +13,12 @@ Determine `DOCS_DIR` (must resolve the same on every machine):
 ## Step 2 — Locate the plan file
 
 Look for a plan file whose name contains `{TICKET_ID}` (case-insensitive) in **both** supported layouts:
-- `DOCS_DIR/superpowers/plans/` — the spec-storage convention.
-- `DOCS_DIR/plans/` — the flat layout (some projects store plans directly under `docs/`).
+- `DOCS_DIR/plans/` — the current spec-storage convention.
+- `DOCS_DIR/superpowers/plans/` — the retired layout (older tickets only).
 
 - If exactly one match is found across both, proceed with it.
 - If multiple match, list them and ask the user which to use.
-- If none match, check for a spec file containing `{TICKET_ID}` in `DOCS_DIR/superpowers/specs/` **and** `DOCS_DIR/specs/` — a spec without a separate plan is acceptable input.
+- If none match, check for a spec file containing `{TICKET_ID}` in `DOCS_DIR/specs/` **and** `DOCS_DIR/superpowers/specs/` — a spec without a separate plan is acceptable input (this is the common case now: `/personal:planit` authors a spec only, and `/implement` works straight from it).
 - If nothing is found in either location, stop and tell the user to run `/personal:planit {TICKET_ID}` first. Then, as the **very last line of your response**, emit `STATUS: NO_PLAN` so the headless loop orchestrator records this ticket as *not implemented* instead of marching on to `/personal:shipit`.
 
 ## Step 3 — Load the referenced spec (if the plan references one)
@@ -52,14 +52,12 @@ git checkout -b feat/{TICKET_ID}-short-description "origin/$BASE"
 (Use the `fix/` prefix for a bug-fix ticket, per the branch-name rule above.) Do **not** prompt for
 the base in headless mode — the loop always supplies `--base`.
 
-## Step 5 — Hand off to Superpowers
+## Step 5 — Implement the plan
 
-Invoke `superpowers:subagent-driven-development`, passing the resolved plan file path (and the milestone spec loaded in Step 3, if any, as design context) as the plan to execute.
+Invoke `/implement`, passing the resolved plan file path (and the milestone spec loaded in Step 3, if any, as design context) as the work to implement. Direct it to run its internal `/code-review` pass with **`--fix`** — auto-apply findings rather than merely reporting them. This is a private, pre-ship pass with no adversarial party to push back against yet, so blind auto-apply is safe and desirable (see `docs/adr/0002-two-pass-code-review-is-intentional.md`). The public, judgment-preserving review happens later, post-ship, in `/personal:reviewit`.
 
-Let Superpowers run its full subagent-driven execution from here — fresh subagent per task, two-stage review (spec compliance then code quality) after each task, final whole-branch review at the end.
+Let `/implement` run its full single-pass execution from here: implement directly (using `/tdd` at pre-agreed seams where applicable), typecheck/test, pre-ship review-and-fix, commit.
 
-**Stop after that final whole-branch review. Do NOT transition into `superpowers:finishing-a-development-branch`** (the built-in last node of `subagent-driven-development`) and do not present its numbered finishing options. Branch finishing in this workflow is owned by `/personal:shipit` → `/personal:reviewit` → `/personal:mergeit`, not by Superpowers.
+Do not implement anything yourself. Do not invoke `/personal:shipit`. When `/implement` finishes, tell the user to clear context and run `/personal:shipit {TICKET_ID}` when ready.
 
-Do not implement anything yourself. Do not invoke `/personal:shipit`. When the final review is done, tell the user to clear context and run `/personal:shipit {TICKET_ID}` when ready.
-
-**Completion signal.** Only after the final whole-branch review has actually run, emit — as the **very last line of your response** — `STATUS: IMPLEMENTED`. This is how the headless loop orchestrator (`loop.py`) confirms the plan was executed; if you stopped early for any reason (no plan, ambiguous input, an error), do **not** emit it.
+**Completion signal.** Only after `/implement`'s pre-ship review-and-fix pass has actually completed, emit — as the **very last line of your response** — `STATUS: IMPLEMENTED`. This is how the headless loop orchestrator (`loop.py`) confirms the plan was executed; if you stopped early for any reason (no plan, ambiguous input, an error), do **not** emit it.

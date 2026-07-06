@@ -1,4 +1,4 @@
-# Review the PR for a Linear ticket using the Superpowers code-reviewer subagent and post findings as a PR comment.
+# Review the PR for a Linear ticket using /review and post findings as a PR comment.
 # Usage: /personal:reviewit {TICKET_ID}
 
 ## Step 1 — Resolve the PR for this ticket
@@ -34,20 +34,19 @@ BASE_SHA=$(gh pr view PR_NUMBER --json baseRefOid --jq '.baseRefOid')
 HEAD_SHA=$(gh pr view PR_NUMBER --json headRefOid --jq '.headRefOid')
 ```
 
-## Step 4 — Invoke Superpowers code review
+## Step 4 — Invoke /review
 
-Invoke the `superpowers:requesting-code-review` skill, providing:
-- `WHAT_WAS_IMPLEMENTED`: derived from the PR title and body
-- `PLAN_OR_REQUIREMENTS`: the review context bundle from Step 2 (Linear ticket intent + spec/plan); fall back to the PR body only if no bundle context could be gathered. **If `PRIOR_REVIEW_CONTEXT` is non-empty, append it to this field** under a `## Prior review history` heading — the reviewer template has no dedicated slot, so this is how the history reaches the reviewer.
-- `BASE_SHA`: from above
-- `HEAD_SHA`: from above
-- `DESCRIPTION`: one-sentence summary of the change
+Invoke `/review` against `PR_NUMBER`. `/review` has no access to Linear or this repo's docs, so hand it framing directly:
+- The review context bundle from Step 2 (Linear ticket intent + spec/plan) as the requirements to check the diff against; fall back to the PR body only if no bundle context could be gathered.
+- **If `PRIOR_REVIEW_CONTEXT` is non-empty, append it** under a `## Prior review history` heading. Instruct `/review` to treat those findings as already-raised: for each, inspect the current diff to confirm whether it is now resolved and note its status (fixed / still open / intentionally deferred) rather than rediscovering it from scratch. Only surface a prior item as a fresh finding if it remains unaddressed, and do **not** re-flag anything the thread shows the user accepted or deferred.
 
-When prior review history is present, instruct the reviewer to treat those findings as already-raised: for each, inspect the current diff to confirm whether it is now resolved and note its status (fixed / still open / intentionally deferred) rather than rediscovering it from scratch. Only surface a prior item as a fresh finding if it remains unaddressed, and do **not** re-flag anything the thread shows the user accepted or deferred.
+`/review` reports along two axes — **Standards** and **Spec** — not severity tiers. `BASE_SHA`/`HEAD_SHA` from Step 3 pin the exact diff if `/review` needs them.
 
 ## Step 5 — Post findings as a PR comment and emit STATUS
 
-When the reviewer subagent returns its findings, post them as a PR review comment:
+`/review` reports findings under two axes, not severity tiers. Compute the assessment mechanically: **"Needs changes"** if either axis reports any finding at all; **"Ready to merge"** only if both axes are clean. This is a roll-up, not a judgment call — don't weigh severity yourself.
+
+Post the result as a PR review comment:
 ```bash
 gh pr comment PR_NUMBER --body "..."
 ```
@@ -59,27 +58,24 @@ Format the comment as (always end with the footer):
 
 **Assessment:** [Ready to merge / Needs changes]
 
-### Critical
-[List or "None"]
+## Standards
+[Findings, verbatim from /review, or "None"]
 
-### Important
-[List or "None"]
-
-### Minor
-[List or "None"]
+## Spec
+[Findings, verbatim from /review, or "None"]
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
 If prior review history was available, briefly note in the comment which previously-raised items are now resolved (e.g. a short "Previously raised, now fixed" line), so the thread shows how the review evolved across rounds.
 
-**If there are Critical or Important issues:** tell the user what they are and that they should be addressed before merging. Then, as the **very last line of your response**, emit:
+**If the assessment is "Needs changes":** tell the user what the findings are and that they should be addressed before merging. Then, as the **very last line of your response**, emit:
 
 ```
 STATUS: CHANGES_REQUESTED
 ```
 
-**If the assessment is clean (no Critical or Important issues):** tell the user to clear context and run `/personal:mergeit {TICKET_ID}` when ready. Then, as the **very last line of your response**, emit:
+**If the assessment is "Ready to merge":** tell the user to clear context and run `/personal:mergeit {TICKET_ID}` when ready. Then, as the **very last line of your response**, emit:
 
 ```
 STATUS: APPROVED
