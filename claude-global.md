@@ -32,5 +32,8 @@ Specs and plans follow the spec-storage convention:
 
 - If a project's CLAUDE.md sets `specs_dir`, use it as the docs base.
 - Otherwise: umbrella projects (a non-git folder holding sibling code repos) → `<umbrella>/docs/`; standalone single repos → `<repo>/.claude/docs/` (gitignore it if you don't want it committed).
-- Specs → `<docs>/superpowers/specs/`, plans → `<docs>/superpowers/plans/`.
+- Specs → `<docs>/specs/`, plans → `<docs>/plans/`.
 - Filenames include the Linear ticket ID: `<TICKET-ID>-<slug>.md`.
+
+(Older projects may still use the retired `<docs>/superpowers/specs|plans/` layout; leave
+that legacy content in place and only write new docs to the flat path.)
