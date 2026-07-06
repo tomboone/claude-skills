@@ -57,9 +57,9 @@ The plugin is organized into three layers, all keyed on a Linear ticket ID:
 
 | Command | Usage | What it does |
 |---|---|---|
-| `/projectit` | `[--dry-run] ["idea"]` | **Planning (project shaping).** Runs a `/grilling` + `/domain-modeling` session on the idea, writes a project-wide spec to disk, then turns it into a Linear project — description (with a pointer to the spec), milestones (each with a **Shared contracts** section), user stories, and work tickets — and creates them in Linear. Applies no labels; per-ticket planning happens later with `/planit`. Multi-repo projects tag each ticket with a `**Target repo:**` line. |
-| `/planit` | `{TICKET_ID}` | **Planning (per-ticket, just-in-time).** Researches a single ticket — including its parent milestone's shared contracts, the project-wide spec (if any), and any already-merged dependencies' shipped specs/code — then, if that's not already sufficient, runs a `/grilling` + `/domain-modeling` session and saves the resulting spec by convention so `/implementit` finds it by ticket ID. |
-| `/implementit` | `{TICKET_ID}` | Creates the work branch and executes the ticket's spec/plan via `/implement` (single-pass implementation, with an internal `/code-review --fix` pass before shipping). Emits `STATUS: IMPLEMENTED`. |
+| `/projectit` | `[--dry-run] ["idea"]` | **Planning (project shaping).** Runs a `/grilling` + `/domain-modeling` session on the idea, writes a project-wide spec to disk, then turns it into a Linear project — description (with a pointer to the spec), milestones (each with a **Shared contracts** section), user stories, and work tickets — and creates them in Linear. Work tickets default to the `loop-ready` and `repo:<name>` labels (deselectable per ticket at the gate), so they're immediately eligible for the loop with no `/planit` pass required. Multi-repo projects tag each ticket with a `**Target repo:**` line. |
+| `/planit` | `{TICKET_ID}` | **Planning (per-ticket, just-in-time — optional).** Researches a single ticket — including its parent milestone's shared contracts, the project-wide spec (if any), and any already-merged dependencies' shipped specs/code — then, if that's not already sufficient, runs a `/grilling` + `/domain-modeling` session and saves the resulting spec by convention so `/implementit` finds it by ticket ID. Not required before `/implementit`; useful when a ticket needs deeper per-ticket planning than the project-wide spec gives it. |
+| `/implementit` | `{TICKET_ID}` | Creates the work branch and executes the ticket's spec/plan via `/implement` (single-pass implementation, with an internal `/code-review --fix` pass before shipping). Falls back to the project-wide spec (via the parent project's `**Project spec:**` pointer) when no per-ticket spec/plan exists. Emits `STATUS: IMPLEMENTED`. |
 | `/shipit` | `{TICKET_ID}` | Commits any outstanding work (Conventional Commit + ticket parenthetical), pushes, and opens a PR against the release branch. Fits the repo's PR template if it has one. |
 | `/reviewit` | `{TICKET_ID}` | Reviews the PR via `/review`, **building on any prior review rounds** (reads the existing review thread so re-reviews don't re-flag resolved items), posts findings as a `## Code Review` comment (Standards + Spec axes), and emits `STATUS: APPROVED` / `STATUS: CHANGES_REQUESTED`. |
 | `/addressit` | `{TICKET_ID}` | Responds to `/reviewit`'s latest findings: implements valid fixes (testing as it goes), **pushes back with reasoning on findings that are wrong / out of scope / conflict with the spec**, pushes fixes to the PR branch, posts a `## Review Response` comment, and emits `STATUS: ADDRESSED` / `STATUS: PUSHED_BACK` / `STATUS: BLOCKED`. |
@@ -67,10 +67,11 @@ The plugin is organized into three layers, all keyed on a Linear ticket ID:
 
 ### The two entry points
 
-- **Per-ticket:** `/planit` → `/implementit` → `/shipit` → `/reviewit` ↔ `/addressit` → `/mergeit`.
-- **Whole-project:** `/projectit` shapes the project into tickets up front; then **each ticket follows
-  the per-ticket flow** — `/planit` → `/implementit` → `/shipit` → `/reviewit` ↔ `/addressit` →
-  `/mergeit`.
+- **Per-ticket:** `/implementit` → `/shipit` → `/reviewit` ↔ `/addressit` → `/mergeit`, with an
+  optional `/planit` first for deeper per-ticket planning.
+- **Whole-project:** `/projectit` shapes the project into tickets up front, labeling each
+  `loop-ready`; then **each ticket follows the per-ticket flow** above, directly or via
+  `plugins/personal/scripts/loop.py`.
 
 The `/reviewit` ↔ `/addressit` step alternates until the reviewer returns `APPROVED` (or the two
 reach an impasse). Ticket statuses are never set by these commands — the GitHub↔Linear connector
@@ -85,9 +86,10 @@ merged PR before starting the next — so each new branch roots on an up-to-date
 conflicts shrink. Pass `--waves` to keep going across an entire project instead: after each wave's
 merges, it re-discovers whatever just became unblocked and runs that as the next wave, repeating
 until nothing is left, a wave makes no progress, or the safety cap is hit (see `--waves` below).
-Note that `/projectit` no longer plans tickets or applies labels, so to use the loop you feed it
-tickets you've already planned with `/planit` and marked `loop-ready` yourself (or pass them
-explicitly via `--tickets`).
+`/projectit` marks each work ticket `loop-ready` (and `repo:<name>`) at creation, so a project it
+scaffolds is immediately loop-runnable with no `/planit` pass required — `/implementit` falls back
+to the project-wide spec directly. Tickets created outside `/projectit` need the `loop-ready` label
+(and matching `repo:<name>`) applied by hand, or can be passed explicitly via `--tickets`.
 
 ### Per-ticket state machine
 
@@ -215,9 +217,9 @@ Linear target without searching:
 
 - `linear_initiative: <name>` — the Linear initiative (project group) this repo belongs to.
 - `linear_team: <name>` — the Linear team to create tickets under.
-- `linear_repo: <name>` — overrides the loop's auto-derived repo label (`repo:<name>`). The loop
-  otherwise derives `<name>` from `git remote get-url origin` (basename). Used to filter triage to
-  this repo's tickets within a multi-repo project.
+- `linear_repo: <name>` — overrides the auto-derived repo label (`repo:<name>`) that both the loop
+  (for triage filtering) and `/projectit` (for labeling tickets it creates in this repo) resolve.
+  Both otherwise derive `<name>` from `git remote get-url origin` (basename).
 - `linear_repos: [<name>, <name>, …]` — for `/projectit`: the canonical repo names a project's
   tickets may target, so each ticket can carry the right `**Target repo:**` line at creation.
 

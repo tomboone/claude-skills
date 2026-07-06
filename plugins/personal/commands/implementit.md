@@ -19,7 +19,8 @@ Look for a plan file whose name contains `{TICKET_ID}` (case-insensitive) in **b
 - If exactly one match is found across both, proceed with it.
 - If multiple match, list them and ask the user which to use.
 - If none match, check for a spec file containing `{TICKET_ID}` in `DOCS_DIR/specs/` **and** `DOCS_DIR/superpowers/specs/` — a spec without a separate plan is acceptable input (this is the common case now: `/personal:planit` authors a spec only, and `/implement` works straight from it).
-- If nothing is found in either location, stop and tell the user to run `/personal:planit {TICKET_ID}` first. Then, as the **very last line of your response**, emit `STATUS: NO_PLAN` so the headless loop orchestrator records this ticket as *not implemented* instead of marching on to `/personal:shipit`.
+- **If no per-ticket plan or spec exists either**, fall back to the project-wide spec: fetch `{TICKET_ID}` via the Linear MCP, read its parent project's description, and look for a `**Project spec:**` line (written by `/personal:projectit` Phase 1). If present, resolve and read that file — this is the common case for a ticket that never went through `/personal:planit`, relying instead on `/projectit`'s project-wide spec covering it well enough. Note: this fallback trusts the project spec's coverage of this specific ticket without the sufficiency judgment `/personal:planit` would normally make (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`) — if implementation goes sideways because the spec doesn't actually cover this ticket, run `/personal:planit {TICKET_ID}` for a proper per-ticket pass instead.
+- If nothing is found anywhere (no per-ticket plan/spec, no project-wide spec), stop and tell the user to run `/personal:planit {TICKET_ID}` first. Then, as the **very last line of your response**, emit `STATUS: NO_PLAN` so the headless loop orchestrator records this ticket as *not implemented* instead of marching on to `/personal:shipit`.
 
 ## Step 3 — Load the referenced spec (if the plan references one)
 
@@ -54,7 +55,7 @@ the base in headless mode — the loop always supplies `--base`.
 
 ## Step 5 — Implement the plan
 
-Invoke `/implement`, passing the resolved plan file path (and the milestone spec loaded in Step 3, if any, as design context) as the work to implement. Direct it to run its internal `/code-review` pass with **`--fix`** — auto-apply findings rather than merely reporting them. This is a private, pre-ship pass with no adversarial party to push back against yet, so blind auto-apply is safe and desirable (see `docs/adr/0002-two-pass-code-review-is-intentional.md`). The public, judgment-preserving review happens later, post-ship, in `/personal:reviewit`.
+Invoke `/implement`, passing whatever design context was resolved in Steps 2–3 (the per-ticket plan/spec, the milestone spec loaded in Step 3 if any, or the project-wide spec if that's what Step 2 fell back to) as the work to implement. Direct it to run its internal `/code-review` pass with **`--fix`** — auto-apply findings rather than merely reporting them. This is a private, pre-ship pass with no adversarial party to push back against yet, so blind auto-apply is safe and desirable (see `docs/adr/0002-two-pass-code-review-is-intentional.md`). The public, judgment-preserving review happens later, post-ship, in `/personal:reviewit`.
 
 Let `/implement` run its full single-pass execution from here: implement directly (using `/tdd` at pre-agreed seams where applicable), typecheck/test, pre-ship review-and-fix, commit.
 

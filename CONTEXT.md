@@ -22,3 +22,10 @@ _Avoid_: code review (ambiguous with pre-ship review)
 
 **Review context bundle**:
 A cached, per-ticket file capturing the Linear ticket's intent (description, spec, plan) — the stable "why", as opposed to the live PR diff/comment thread which is always fetched fresh. Shared by `/personal:reviewit`, `/personal:addressit`, and `/personal:mergeit`. See `plugins/personal/review-context-convention.md`.
+
+**Project-wide spec**:
+A single written spec covering an entire project, produced by `/personal:projectit` Phase 1 and pointed to from the Linear project's description (`**Project spec:**`). Distinct from a per-ticket spec: `/personal:implementit` falls back to it directly when no per-ticket spec exists, trusting its coverage without `/personal:planit`'s sufficiency judgment (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`).
+_Avoid_: project spec, spec (ambiguous with per-ticket spec)
+
+**Loop-ready**:
+A Linear label `/personal:projectit` applies to a work ticket at creation (alongside `repo:<name>`), meaning `loop.py` may pick it up directly once its `blockedBy` blockers are `Done` — with no `/personal:planit` pass required first. Deselectable per-ticket at the Phase-3 gate for anything that should be planned or reviewed by hand first.

@@ -1,11 +1,11 @@
-# Scaffold a Linear project: brainstorm it, break it into milestones, stories, and work tickets, and create them in Linear. Per-ticket specs/plans are authored later, just-in-time, with /personal:planit.
+# Scaffold a Linear project: brainstorm it, break it into milestones, stories, and work tickets, and create them in Linear, labeled loop-ready for immediate pickup by loop.py. Per-ticket specs/plans can still be authored just-in-time with /personal:planit when the project-wide spec isn't enough for a given ticket.
 # Usage: /personal:projectit [--dry-run] ["high-level project idea"]
 
 ## Conventions used by this command
 
 - **Dry-run:** if `--dry-run` is passed, make NO `save_*`/`create_*` Linear calls. Instead print each Linear write you would make. Every phase honors this — its write step prints instead of executing when dry-run is active.
 - **Never** set issue `status` — the GitHub↔Linear connector owns it.
-- **No labels.** This command applies no labels of any kind. Ticket selection is manual, and per-ticket specs/plans are authored later with `/personal:planit`.
+- **Labels:** work tickets are created with `loop-ready` and `repo:<name>` (see Phase 3) so they're immediately eligible for `loop.py` once their blockers are `Done` — no mandatory `/personal:planit` pass first. Deselectable per-ticket at the Phase-3 gate. Stories get no labels.
 - Create nothing in Linear until after the Phase 3 gate.
 
 ## Phase 0 — Resolve the Linear target  ■ gate
@@ -21,11 +21,17 @@
    store `PROJECT_TO_CREATE=<name>`. **Do not call `save_project` here** — all Linear writes are deferred
    to the Phase-3 batch. Offer to write `linear_initiative`/`linear_team` back into the repo's
    `CLAUDE.md` if they were not already set.
-7. **Target repos (multi-repo projects only):** if this project's tickets may span more than one repo,
-   resolve the set of repo **names** — most authoritative first: (a) a `linear_repos:` list in
-   `CLAUDE.md`; else (b) ask the user to name them. Record the set as `REPOS` (names only — no local
-   paths and no docs-dir resolution or pinning). If the project targets a single repo, skip repo
-   handling entirely and tickets carry no target-repo line.
+7. **Repo name (for the `repo:<name>` label every ticket gets in Phase 3):** resolve the name of the
+   repo `/personal:projectit` is being run in — a `linear_repo:` hint in `CLAUDE.md`; else the
+   basename of `git remote get-url origin` (`.git` stripped). This must match what `loop.py` derives
+   for itself (`resolve_repo_label`), since that's the label it filters tickets on. Record it as
+   `REPO_NAME`.
+   **Target repos (multi-repo projects only):** if this project's tickets may span more than one repo,
+   resolve the set of *additional* repo **names** — most authoritative first: (a) a `linear_repos:`
+   list in `CLAUDE.md`; else (b) ask the user to name them. Record the set as `REPOS` (names only —
+   no local paths and no docs-dir resolution or pinning). If the project targets a single repo, skip
+   this multi-repo sub-step entirely — every ticket's `repo:<name>` label uses `REPO_NAME`, and
+   tickets carry no target-repo line.
 
 ## Phase 1 — Project description  ■ gate
 
@@ -61,10 +67,19 @@ one work ticket = one `/implementit` run = one PR; stories hold user-facing acce
 tickets are the implementable slices. Note inter-ticket `blockedBy` dependencies (B builds on A).
 
 **Target repo (multi-repo projects only):** assign each work ticket exactly one repo name from
-`REPOS` and record it as a plain `**Target repo:** <name>` line in the ticket description —
-informational, so you know where to run `/personal:planit`. **Never silently guess** — ask when a
-ticket's repo is ambiguous. Show each ticket's assigned repo in the breakdown so the user can edit
-it at the gate. Stories get no repo assignment. Single-repo projects: omit target-repo lines entirely.
+`REPOS` (or `REPO_NAME` if it belongs to the repo `/personal:projectit` is running in) and record it
+as a plain `**Target repo:** <name>` line in the ticket description — informational, so you know
+where to run `/personal:planit`. **Never silently guess** — ask when a ticket's repo is ambiguous.
+Show each ticket's assigned repo in the breakdown so the user can edit it at the gate. Stories get
+no repo assignment. Single-repo projects: omit target-repo lines entirely (every ticket still gets
+`REPO_NAME` for its `repo:<name>` label below).
+
+**Loop-ready + repo labels:** every work ticket defaults to the labels `loop-ready` and `repo:<name>`
+— `<name>` being the ticket's assigned target repo (multi-repo) or `REPO_NAME` (single-repo) — so
+it's immediately eligible for `loop.py` once its `blockedBy` blockers are `Done`, with no mandatory
+`/personal:planit` pass first (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`).
+Show each ticket's labels in the breakdown so the user can deselect `loop-ready` for any ticket they'd
+rather plan or review manually before it's loop-eligible. Stories get no labels.
 
 **■ Gate:** user reviews/edits the full breakdown. **This is the single gate after which all Linear
 writes happen** — nothing was written in Phases 0–2.
@@ -73,7 +88,7 @@ On approval, create top-down in one batch (dry-run prints each call instead):
 1. **Project:** append a `**Project spec:** <PROJECT_SPEC path>` line to the held Phase-1 description. If creating new, `save_project(name=<PROJECT_TO_CREATE>, addTeams=[<team>], addInitiatives=[<initiative>], description=<description + Project spec line>)`; if reusing, `save_project(id=PROJECT, description=<description + Project spec line>)`. Record `PROJECT`.
 2. **Milestones:** for each held milestone, `save_milestone(project=PROJECT, name=<name>, description=<goal + Shared contracts section>)`.
 3. **Stories:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, description=<story + acceptance criteria>)`. Record each identifier. **No label.**
-4. **Tickets:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, parentId=<story-id>, description=<intent; for multi-repo projects prepend a "**Target repo:** <name>" line>)`.
+4. **Tickets:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, parentId=<story-id>, labels=<["loop-ready", "repo:<name>"] unless the user deselected loop-ready for this ticket at the gate>, description=<intent; for multi-repo projects prepend a "**Target repo:** <name>" line>)`.
 5. **Dependencies:** for each "B builds on A", `save_issue(id=B, blockedBy=[A])`.
 
 **Idempotency:** before creating, look up the project (by id/name), milestones (by name), and issues
@@ -87,8 +102,10 @@ Print a summary block:
 Project: <Linear project URL>
 Milestones:   <count>
 User stories: <count>
-Work tickets: <count>
+Work tickets: <count> (<N> loop-ready)
 
-Next: run /personal:planit {TICKET} in the ticket's repo to plan it just-in-time,
-then /personal:implementit {TICKET}.
+Next: loop-ready tickets can go straight through plugins/personal/scripts/loop.py — it
+will implement each directly off the project-wide spec once its blockers are Done. For
+any ticket you deselected, or one that needs deeper per-ticket planning, run
+/personal:planit {TICKET} first, then /personal:implementit {TICKET}.
 ```
