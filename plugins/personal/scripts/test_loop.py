@@ -1107,6 +1107,20 @@ class TestDotenv(unittest.TestCase):
         self.assertEqual(environ, {})
 
 
+class TestRunTriage(unittest.TestCase):
+    def test_raises_on_failure(self):
+        with self.assertRaises(SystemExit):
+            loop.run_triage("p", "loop-ready", "repo:r", lambda cmd, timeout: loop.InvocationResult(1, "", False))
+
+    def test_raises_with_the_agents_reply_when_json_is_unparseable(self):
+        def runner(cmd, timeout):
+            return loop.InvocationResult(0, "I don't have access to the Linear MCP right now.", False)
+
+        with self.assertRaises(SystemExit) as ctx:
+            loop.run_triage("p", "loop-ready", "repo:r", runner)
+        self.assertIn("Linear MCP", str(ctx.exception))
+
+
 class TestRunExplicitWave(unittest.TestCase):
     def test_formats_prompt_and_parses_result(self):
         calls = []
@@ -1125,6 +1139,35 @@ class TestRunExplicitWave(unittest.TestCase):
     def test_raises_on_failure(self):
         with self.assertRaises(SystemExit):
             loop.run_explicit_wave("p", ["A-1"], lambda cmd, timeout: loop.InvocationResult(1, "", False))
+
+    def test_raises_with_the_agents_reply_when_json_is_unparseable(self):
+        """Zero exit, no timeout, but the agent's final message wasn't JSON (asked a clarifying
+        question, hit an MCP error, explained a problem in prose, ...) — must not be a bare
+        traceback, and must surface what the agent actually said."""
+        def runner(cmd, timeout):
+            return loop.InvocationResult(0, "I couldn't find a project by that name — did you mean 'Foo Bar'?", False)
+
+        with self.assertRaises(SystemExit) as ctx:
+            loop.run_explicit_wave("p", ["A-1"], runner)
+        self.assertIn("Foo Bar", str(ctx.exception))
+
+
+class TestParseWaveResult(unittest.TestCase):
+    def test_passes_through_valid_json(self):
+        out = loop._parse_wave_result("Triage call", '{"project": "p", "wave": [], "held": []}')
+        self.assertEqual(out["project"], "p")
+
+    def test_wraps_unparseable_text_in_systemexit_with_the_raw_reply(self):
+        with self.assertRaises(SystemExit) as ctx:
+            loop._parse_wave_result("Triage call", "Sorry, I need more information to proceed.")
+        msg = str(ctx.exception)
+        self.assertIn("Triage call", msg)
+        self.assertIn("Sorry, I need more information to proceed.", msg)
+
+    def test_handles_none_result_text(self):
+        with self.assertRaises(SystemExit) as ctx:
+            loop._parse_wave_result("Triage call", None)
+        self.assertIn("(empty)", str(ctx.exception))
 
 
 class TestWavesRequiresMerge(unittest.TestCase):

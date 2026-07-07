@@ -599,12 +599,27 @@ def feasibility_guard(runner):
     return (True, "ok")
 
 
+def _parse_wave_result(step_label, result_text):
+    """parse_triage_result, but on failure raise a SystemExit that shows the agent's actual reply
+    instead of a bare traceback. A ValueError here means the agent ran fine (zero exit, no
+    timeout) but didn't return JSON — it asked a clarifying question, hit an MCP error, or
+    explained a problem in prose instead. That reply is the only diagnostic we have, so surface
+    it rather than losing it to an unhandled crash."""
+    try:
+        return parse_triage_result(result_text)
+    except ValueError:
+        raise SystemExit(
+            f"{step_label} ran but returned no parseable JSON — the agent's actual reply was:\n"
+            f"{(result_text or '(empty)').strip()[:2000]}"
+        )
+
+
 def run_triage(project, label, repo_label, runner):
     res = runner(build_claude_cmd(
         TRIAGE_PROMPT.format(project=project, label=label, repo_label=repo_label), "sonnet"), 300)
     if res.timed_out or res.returncode != 0:
         raise SystemExit("Triage call failed.")
-    return parse_triage_result(res.result_text)
+    return _parse_wave_result("Triage call", res.result_text)
 
 
 def run_explicit_wave(project, ticket_ids, runner):
@@ -615,7 +630,7 @@ def run_explicit_wave(project, ticket_ids, runner):
         EXPLICIT_WAVE_PROMPT.format(project=project, ids=", ".join(ticket_ids)), "sonnet"), 300)
     if res.timed_out or res.returncode != 0:
         raise SystemExit("Explicit-ticket wave check failed.")
-    return parse_triage_result(res.result_text)
+    return _parse_wave_result("Explicit-ticket wave check", res.result_text)
 
 
 def _parse_dotenv(text):
