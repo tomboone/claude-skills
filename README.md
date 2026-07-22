@@ -15,7 +15,7 @@ claude-skills/
 ├── .claude-plugin/marketplace.json         # marketplace manifest ("personal-skills")
 ├── claude-global.md                        # canonical global CLAUDE.md (see below)
 ├── plugins/personal/
-│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.16.4)
+│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.16.5)
 │   ├── commands/                           # the slash commands (projectit, planit, …, mergeit)
 │   ├── scripts/loop.py                     # headless autonomous loop (+ test_loop.py)
 │   ├── spec-and-plan-convention.md         # where specs & plans live on disk
