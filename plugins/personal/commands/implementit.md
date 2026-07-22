@@ -16,11 +16,18 @@ Look for a plan file whose name contains `{TICKET_ID}` (case-insensitive) in **b
 - `DOCS_DIR/plans/` — the current spec-storage convention.
 - `DOCS_DIR/superpowers/plans/` — the retired layout (older tickets only).
 
-- If exactly one match is found across both, proceed with it.
+Work the sources below **in order** and stop at the first that resolves. `STATUS: NO_PLAN` is correct only after *all four* have been tried — it means "no design context exists anywhere," not "the filename lookup missed."
+
+**1. A per-ticket file named for the ticket.**
+- If exactly one match is found across both plan layouts, proceed with it.
 - If multiple match, list them and ask the user which to use.
 - If none match, check for a spec file containing `{TICKET_ID}` in `DOCS_DIR/specs/` **and** `DOCS_DIR/superpowers/specs/` — a spec without a separate plan is acceptable input (this is the common case now: `/personal:planit` authors a spec only, and `/implement` works straight from it).
-- **If no per-ticket plan or spec exists either**, fall back to the project-wide spec: fetch `{TICKET_ID}` via the Linear MCP, read its parent project's description, and look for a `**Project spec:**` line (written by `/personal:projectit` Phase 1). If present, resolve and read that file — this is the common case for a ticket that never went through `/personal:planit`, relying instead on `/projectit`'s project-wide spec covering it well enough. Note: this fallback trusts the project spec's coverage of this specific ticket without the sufficiency judgment `/personal:planit` would normally make (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`) — if implementation goes sideways because the spec doesn't actually cover this ticket, run `/personal:planit {TICKET_ID}` for a proper per-ticket pass instead.
-- If nothing is found anywhere (no per-ticket plan/spec, no project-wide spec), stop and tell the user to run `/personal:planit {TICKET_ID}` first. Then, as the **very last line of your response**, emit `STATUS: NO_PLAN` so the headless loop orchestrator records this ticket as *not implemented* instead of marching on to `/personal:shipit`.
+
+**2. A pointer in the ticket's own description.** Fetch `{TICKET_ID}` via the Linear MCP and read **its own description** for a line naming a spec or plan — `/personal:projectit` writes one on every ticket it creates, in the form ``Spec: `docs/specs/NEU-638-*.md` §5`` (a `Plan:` line is equally valid). **Resolve globs**: `NEU-638-*.md` is a real pointer, not a literal filename — expand it against `DOCS_DIR` and use the match. A section marker (`§5`) narrows *what to read within the file*; it does not make the pointer unusable. This is the most direct signal available and is checked before any project-level lookup.
+
+**3. The project-wide spec.** Read the description of **the Linear project the ticket belongs to** — the `project` / `projectId` field on the issue. This is *not* the ticket's `parentId`: a ticket commonly has both a parent **issue** (a user story, e.g. `NEU-727`) and a Linear **project**, and only the project carries the pointer. Look for a `**Project spec:**` line (written by `/personal:projectit` Phase 1); a `**Project plan:**` line is an equally valid fallback. If present, resolve and read that file — this is the common case for a ticket that never went through `/personal:planit`, relying instead on `/projectit`'s project-wide spec covering it well enough. Note: this fallback trusts the project spec's coverage of this specific ticket without the sufficiency judgment `/personal:planit` would normally make (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`) — if implementation goes sideways because the spec doesn't actually cover this ticket, run `/personal:planit {TICKET_ID}` for a proper per-ticket pass instead.
+
+**4. Nothing found.** Only if all three above come back empty, stop and tell the user to run `/personal:planit {TICKET_ID}` first. Say **which** sources you checked and what you searched for. Then, as the **very last line of your response**, emit `STATUS: NO_PLAN` so the headless loop orchestrator records this ticket as *not implemented* instead of marching on to `/personal:shipit`.
 
 ## Step 3 — Load the referenced spec (if the plan references one)
 
