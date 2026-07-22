@@ -28,11 +28,13 @@ Run `gh pr view PR_NUMBER --comments` and look for the most recent `## Code Revi
 **`gh pr checks` cannot tell you.** When it prints `no checks reported on the '<branch>' branch` and exits **1**, that means either "this repo has no CI" *or* "CI hasn't registered a run yet" — identical output, identical exit code, opposite correct responses. Resolve it by looking at the workflow definitions instead:
 
 ```bash
-grep -lE '^[[:space:]]*(pull_request|pull_request_target)[[:space:]]*:' .github/workflows/*.y*ml 2>/dev/null
+grep -rlE '^[[:space:]]*(pull_request|pull_request_target)[[:space:]]*:' .github/workflows/ 2>/dev/null
 ```
 
+Pass the **directory** to `grep -r`; do not glob the filenames. Under `zsh` — the default shell on macOS, and the one this runs under — an unmatched glob like `.github/workflows/*.y*ml` is a **fatal** `no matches found` error that aborts the command before `grep` ever runs, so a repo with no workflows directory would fail this step instead of cleanly answering "no". (`bash` degrades to a literal string instead, which is why this reads as portable but isn't.) `grep -r` on a missing directory just exits non-zero with no output, which is exactly the signal we want.
+
 - **Any match** → this repo **does** run CI on pull requests. Checks *will* appear; a missing check means "not yet," never "not configured." Call this `EXPECTS_CI=yes`.
-- **No match** (or no `.github/workflows/` at all) → `EXPECTS_CI=no`.
+- **No output** (no matching trigger, or no `.github/workflows/` at all) → `EXPECTS_CI=no`.
 
 ### 3b. Wait for a check run to register (only when `EXPECTS_CI=yes`)
 
