@@ -17,7 +17,7 @@ A private, self-directed code review that runs inside `/implement`, before a PR 
 _Avoid_: code review (ambiguous with post-ship review)
 
 **Post-ship review**:
-The public, durable review gate that runs against an open PR (`/review`, invoked by `/personal:reviewit`). Produces a `## Code Review` PR comment and a `STATUS` sentinel that `loop.py`'s state machine and `/personal:mergeit` depend on. Read-only — findings get pushed back on or fixed by `/personal:addressit`, never auto-applied.
+The public, durable review gate that runs against an open PR (`/review`, invoked by `/personal:reviewit`). Produces a `## Code Review` PR comment and a `STATUS` sentinel. Read-only — findings get pushed back on or fixed by `/personal:addressit`, never auto-applied. **Manual only:** `loop.py` no longer runs it (see `docs/adr/0005-the-loop-drops-post-ship-review.md`), and `/personal:mergeit` honors its verdict when one exists but does not require one.
 _Avoid_: code review (ambiguous with pre-ship review)
 
 **Review context bundle**:

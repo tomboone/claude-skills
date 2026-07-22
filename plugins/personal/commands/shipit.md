@@ -81,6 +81,6 @@ Use `gh pr create` with:
 
 ## Step 8 — Hand off
 
-Show the PR URL. Tell the user to clear context and run `/personal:reviewit {TICKET_ID}` when ready. Stop here — do not wait for CI, do not merge.
+Show the PR URL. Tell the user to clear context and run `/personal:mergeit {TICKET_ID}` when ready — or `/personal:reviewit {TICKET_ID}` first if this PR warrants a second opinion beyond the `/code-review --fix` pass `/personal:implementit` already ran. Stop here — do not wait for CI, do not merge.
 
 Then, as the **very last line of your response**, emit `STATUS: SHIPPED`. (The headless loop orchestrator keys on the PR URL; this sentinel keeps the status contract uniform across commands.)

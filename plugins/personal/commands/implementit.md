@@ -55,7 +55,9 @@ the base in headless mode — the loop always supplies `--base`.
 
 ## Step 5 — Implement the plan
 
-Invoke `/implement`, passing whatever design context was resolved in Steps 2–3 (the per-ticket plan/spec, the milestone spec loaded in Step 3 if any, or the project-wide spec if that's what Step 2 fell back to) as the work to implement. Direct it to run its internal `/code-review` pass with **`--fix`** — auto-apply findings rather than merely reporting them. This is a private, pre-ship pass with no adversarial party to push back against yet, so blind auto-apply is safe and desirable (see `docs/adr/0002-two-pass-code-review-is-intentional.md`). The public, judgment-preserving review happens later, post-ship, in `/personal:reviewit`.
+Invoke `/implement`, passing whatever design context was resolved in Steps 2–3 (the per-ticket plan/spec, the milestone spec loaded in Step 3 if any, or the project-wide spec if that's what Step 2 fell back to) as the work to implement. Direct it to run its internal `/code-review` pass with **`--fix`** — auto-apply findings rather than merely reporting them.
+
+**This review pass is not optional and must not be skipped.** It is the only code review the loop performs: the loop runs `implementit → shipit → mergeit` and no longer runs a post-ship `/personal:reviewit` pass (see `docs/adr/0005-the-loop-drops-post-ship-review.md`). Auto-apply is safe here because there is no adversarial party to push back against yet. Run `/personal:reviewit {TICKET_ID}` by hand afterwards if a ticket warrants a second, judgment-preserving opinion on the open PR.
 
 Let `/implement` run its full single-pass execution from here: implement directly (using `/tdd` at pre-agreed seams where applicable), typecheck/test, pre-ship review-and-fix, commit.
 
