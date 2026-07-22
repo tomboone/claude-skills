@@ -15,7 +15,7 @@ claude-skills/
 ├── .claude-plugin/marketplace.json         # marketplace manifest ("personal-skills")
 ├── claude-global.md                        # canonical global CLAUDE.md (see below)
 ├── plugins/personal/
-│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.16.1)
+│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.16.2)
 │   ├── commands/                           # the slash commands (projectit, planit, …, mergeit)
 │   ├── scripts/loop.py                     # headless autonomous loop (+ test_loop.py)
 │   ├── spec-and-plan-convention.md         # where specs & plans live on disk
@@ -62,7 +62,7 @@ The plugin is organized into three layers, all keyed on a Linear ticket ID:
 |---|---|---|
 | `/projectit` | `[--dry-run] ["idea"]` | **Planning (project shaping).** Runs a `/grilling` + `/domain-modeling` session on the idea, writes a project-wide spec to disk, then turns it into a Linear project — description (with a pointer to the spec), milestones (each with a **Shared contracts** section), user stories, and work tickets — and creates them in Linear. Work tickets default to the `loop-ready` and `repo:<name>` labels (deselectable per ticket at the gate), so they're immediately eligible for the loop with no `/planit` pass required. Multi-repo projects tag each ticket with a `**Target repo:**` line. |
 | `/planit` | `{TICKET_ID}` | **Planning (per-ticket, just-in-time — optional).** Researches a single ticket — including its parent milestone's shared contracts, the project-wide spec (if any), and any already-merged dependencies' shipped specs/code — then, if that's not already sufficient, runs a `/grilling` + `/domain-modeling` session and saves the resulting spec by convention so `/implementit` finds it by ticket ID. Not required before `/implementit`; useful when a ticket needs deeper per-ticket planning than the project-wide spec gives it. |
-| `/implementit` | `{TICKET_ID}` | Creates the work branch and executes the ticket's spec/plan via `/implement` (single-pass implementation, with an internal `/code-review --fix` pass before shipping). Falls back to the project-wide spec (via the parent project's `**Project spec:**` pointer) when no per-ticket spec/plan exists. Emits `STATUS: IMPLEMENTED`. |
+| `/implementit` | `{TICKET_ID}` | Creates the work branch and executes the ticket's spec/plan via `/implement` (single-pass implementation, with an internal `/code-review` pass before shipping that fixes hard violations and genuine defects, leaving judgement-call smells to a summary). Falls back to the project-wide spec (via the parent project's `**Project spec:**` pointer) when no per-ticket spec/plan exists. Emits `STATUS: IMPLEMENTED`. |
 | `/shipit` | `{TICKET_ID}` | Commits any outstanding work (Conventional Commit + ticket parenthetical), pushes, and opens a PR against the release branch. Fits the repo's PR template if it has one. |
 | `/reviewit` | `{TICKET_ID}` | **Manual only — not run by the loop.** Reviews the PR via `/review`, **building on any prior review rounds** (reads the existing review thread so re-reviews don't re-flag resolved items), posts findings as a `## Code Review` comment (Standards + Spec axes), and emits `STATUS: APPROVED` / `STATUS: CHANGES_REQUESTED`. |
 | `/addressit` | `{TICKET_ID}` | **Manual only — not run by the loop.** Responds to `/reviewit`'s latest findings: implements valid fixes (testing as it goes), **pushes back with reasoning on findings that are wrong / out of scope / conflict with the spec**, pushes fixes to the PR branch, posts a `## Review Response` comment, and emits `STATUS: ADDRESSED` / `STATUS: PUSHED_BACK` / `STATUS: BLOCKED`. |
@@ -107,8 +107,8 @@ implementit → shipit ──[--merge]──→ mergeit ─→ MERGED
      └─ no STATUS: IMPLEMENTED ────→ FAILED
 ```
 
-- Code review happens **inside** `implementit`: `/implement` runs `/code-review --fix` before the PR
-  is opened. The loop does not run `/personal:reviewit` (ADR 0005), so there is no review ↔ address
+- Code review happens **inside** `implementit`: `/implement` runs `/code-review` before the PR is
+  opened and applies its findings **by severity** (ADR 0006 — hard violations and real defects only). The loop does not run `/personal:reviewit` (ADR 0005), so there is no review ↔ address
   alternation and no round budget.
 - A ticket is merged **only when `--merge` is set**; otherwise the loop stops once the PR is open,
   at `READY_FOR_REVIEW`, for a human/team to review and merge.
@@ -171,7 +171,7 @@ to retune from real usage data — not final):
 | feasibility guard | Haiku | low |
 
 `implementit` runs on **Opus at high effort**: it works from a spec rather than a pre-written plan,
-and since ADR 0005 its internal `/code-review --fix` pass is the loop's only code review — the whole
+and since ADR 0005 its internal `/code-review` pass is the loop's only code review — the whole
 quality burden for a ticket sits there. Everything downstream is mechanical, so `shipit` runs on
 Sonnet at low effort and `mergeit` on Haiku. The per-step `usage/cost` summary also reports a **cache
 write** column alongside cache reads, so each cold-started step's cache cost is visible.
@@ -187,7 +187,7 @@ per-ticket start, and per-ticket disposition. With `--detach` those lines stream
 
 The agentic steps run under `--permission-mode bypassPermissions`. Safety comes from: the
 `settings.json` deny-rules (which still apply); every change landing on a feature branch behind a
-PR; the `/code-review --fix` pass `/implement` runs before that PR is opened; **CI passing** as the
+PR; the `/code-review` pass `/implement` runs before that PR is opened; **CI passing** as the
 merge gate; `--merge` being opt-in; and merge-blocks escalating to `NEEDS_HUMAN` rather than being
 forced through.
 
