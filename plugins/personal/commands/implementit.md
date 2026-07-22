@@ -55,9 +55,14 @@ the base in headless mode — the loop always supplies `--base`.
 
 ## Step 5 — Implement the plan
 
-Invoke `/implement`, passing whatever design context was resolved in Steps 2–3 (the per-ticket plan/spec, the milestone spec loaded in Step 3 if any, or the project-wide spec if that's what Step 2 fell back to) as the work to implement. Direct it to run its internal `/code-review` pass with **`--fix`** — auto-apply findings rather than merely reporting them.
+Invoke `/implement`, passing whatever design context was resolved in Steps 2–3 (the per-ticket plan/spec, the milestone spec loaded in Step 3 if any, or the project-wide spec if that's what Step 2 fell back to) as the work to implement. Direct it to run its internal `/code-review` pass and to **act on the findings, scoped by severity**:
 
-**This review pass is not optional and must not be skipped.** It is the only code review the loop performs: the loop runs `implementit → shipit → mergeit` and no longer runs a post-ship `/personal:reviewit` pass (see `docs/adr/0005-the-loop-drops-post-ship-review.md`). Auto-apply is safe here because there is no adversarial party to push back against yet. Run `/personal:reviewit {TICKET_ID}` by hand afterwards if a ticket warrants a second, judgment-preserving opinion on the open PR.
+- **Apply** hard violations of a documented repo standard, and genuine defects.
+- **Do not refactor** for the Fowler smell heuristics the Standards axis also reports (Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest) — `/code-review` explicitly marks these as *"always a judgement call, never a hard violation."* Act on one only when it is directly implicated in a real defect; otherwise list it in your summary and leave the code alone.
+
+**This review pass is not optional and must not be skipped.** It is the only code review the loop performs: the loop runs `implementit → shipit → mergeit` and no longer runs a post-ship `/personal:reviewit` pass (see `docs/adr/0005-the-loop-drops-post-ship-review.md`). Run `/personal:reviewit {TICKET_ID}` by hand afterwards if a ticket warrants a second, judgment-preserving opinion on the open PR.
+
+**Why the severity scope.** `/code-review` is a read-only reporting skill — it has no `--fix` flag, no severity field, and no confidence threshold, because it was written for a human to read and exercise judgement over. Directing it to blind-apply everything means applying a dozen judgement-call refactorings (each with a prescribed remedy: rename, extract a type, replace with polymorphism, split the module) that the skill deliberately declines to rank. That is both a quality risk and the loop's single largest token cost — see `docs/adr/0006-implementit-applies-review-findings-by-severity.md`.
 
 Let `/implement` run its full single-pass execution from here: implement directly (using `/tdd` at pre-agreed seams where applicable), typecheck/test, pre-ship review-and-fix, commit.
 

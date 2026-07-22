@@ -19,7 +19,7 @@ Run `gh pr view PR_NUMBER --comments` and look for the most recent `## Code Revi
 
 - If one exists and its **Assessment is "Needs changes"**, do **not** prompt — stop and emit `STATUS: MERGE_BLOCKED` as the very last line, noting the unaddressed findings.
 - If one exists and its **Assessment is "Ready to merge"**, proceed.
-- If there is **no** `## Code Review` comment, proceed. The loop no longer runs `/personal:reviewit` — `/implement` performs its `/code-review --fix` pass before the PR is opened, so a loop-driven PR legitimately has no review comment and CI is the gate. (Run `/personal:reviewit {TICKET_ID}` by hand first if you want a recorded verdict on this PR.)
+- If there is **no** `## Code Review` comment, proceed. The loop no longer runs `/personal:reviewit` — `/implement` performs its `/code-review` pass before the PR is opened, so a loop-driven PR legitimately has no review comment and CI is the gate. (Run `/personal:reviewit {TICKET_ID}` by hand first if you want a recorded verdict on this PR.)
 
 ## Step 3 — Wait for CI (bounded)
 
