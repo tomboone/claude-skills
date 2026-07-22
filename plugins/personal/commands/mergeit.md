@@ -23,7 +23,23 @@ Run `gh pr view PR_NUMBER --comments` and look for the most recent `## Code Revi
 
 ## Step 3 — Wait for CI (bounded)
 
-Poll `gh pr checks PR_NUMBER` every 30 seconds, showing a brief status line each poll, up to a 30-minute cap. If any check fails, or the cap is reached with checks still pending, stop and emit `STATUS: MERGE_BLOCKED` as the very last line, reporting which check failed/stalled and its log URL. Do not proceed.
+**Do not hand-roll a poll loop.** `gh` blocks server-side and returns the moment checks settle, which is far faster and cheaper than a `sleep`-and-re-check cycle (each of which costs a full agent turn):
+
+```bash
+gh pr checks PR_NUMBER --watch --fail-fast --interval 10
+```
+
+Bound it at 30 minutes. Prefer `timeout 1800 gh pr checks …` when `timeout` (or `gtimeout`) is on `PATH` — it's GNU coreutils and is **not** present on a stock macOS, so check with `command -v timeout` first and run the command bare if it's missing. Under the loop this is belt-and-braces anyway: `loop.py` already caps the whole `mergeit` step at 1200s and will kill it first.
+
+Interpret the exit code:
+
+- **0** — every check passed. Proceed to Step 4.
+- **1** — either a check **failed** or **no checks are registered**. These are different situations and the exit code alone can't tell them apart, so disambiguate on the command's output:
+  - Output names one or more failing checks → stop and emit `STATUS: MERGE_BLOCKED` as the very last line, reporting which check failed and its log URL.
+  - Output is `no checks reported on the '<branch>' branch` → this is usually the **registration race**: `/personal:shipit` opened the PR seconds ago and GitHub hasn't attached the workflow yet. Wait 20 seconds (`sleep 20`) and run the command once more. If it still reports no checks, the repo genuinely has no CI on this branch — say so and proceed to Step 4. **Do not treat "no CI configured" as a merge blocker**; plenty of repos have none.
+- **124** (`timeout` fired) — checks were still pending at the 30-minute cap. Stop and emit `STATUS: MERGE_BLOCKED` as the very last line, reporting which checks were still running and their log URLs.
+
+`--watch` streams its own progress, so don't add status lines of your own.
 
 ## Step 4 — Merge, using the strategy that matches `BASE`
 
