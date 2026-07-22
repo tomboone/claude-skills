@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless orchestrator: drives /implementit -> /shipit -> (/reviewit <-> /addressit)* -> /mergeit per loop-ready ticket."""
+"""Headless orchestrator: drives /implementit -> /shipit -> /mergeit per loop-ready ticket."""
 import argparse
 import json
 import os
@@ -15,25 +15,25 @@ from pathlib import Path
 InvocationResult = namedtuple("InvocationResult", ["returncode", "result_text", "timed_out", "usage"], defaults=[None])
 TicketResult = namedtuple(
     "TicketResult",
-    ["ticket_id", "implemented", "pr_url", "review_status", "failed_step", "reason", "usage", "disposition", "rounds"],
-    defaults=[None, None, 0],
+    ["ticket_id", "implemented", "pr_url", "failed_step", "reason", "usage", "disposition"],
+    defaults=[None, None],
 )
 
 
 def default_models():
-    return {"implementit": "sonnet", "shipit": "sonnet", "reviewit": "sonnet",
-            "reviewit_rereview": "sonnet", "addressit": "sonnet", "mergeit": "haiku",
+    # implementit runs on Opus: it now carries the whole quality burden for a ticket
+    # (/implement's internal /code-review --fix is the only review pass in the loop),
+    # and it works from specs, not pre-written code.
+    return {"implementit": "opus", "shipit": "sonnet", "mergeit": "haiku",
             "triage": "sonnet", "guard": "haiku"}
 
 
 def default_timeouts():
-    return {"implementit": 1800, "shipit": 600, "reviewit": 900,
-            "addressit": 1800, "mergeit": 1200}
+    return {"implementit": 2700, "shipit": 600, "mergeit": 1200}
 
 
 def default_efforts():
-    return {"implementit": "high", "shipit": "low", "reviewit": "medium",
-            "reviewit_rereview": "medium", "addressit": "medium", "mergeit": "low",
+    return {"implementit": "high", "shipit": "low", "mergeit": "low",
             "triage": "medium", "guard": "low"}
 
 
@@ -65,26 +65,6 @@ def parse_triage_result(result_text):
     }
 
 
-def parse_review_status(result_text):
-    """Return APPROVED / CHANGES_REQUESTED / None from a /reviewit result."""
-    if "STATUS: CHANGES_REQUESTED" in (result_text or ""):
-        return "CHANGES_REQUESTED"
-    if "STATUS: APPROVED" in (result_text or ""):
-        return "APPROVED"
-    return None
-
-
-def parse_address_status(result_text):
-    text = result_text or ""
-    if "STATUS: BLOCKED" in text:
-        return "BLOCKED"
-    if "STATUS: PUSHED_BACK" in text:
-        return "PUSHED_BACK"
-    if "STATUS: ADDRESSED" in text:
-        return "ADDRESSED"
-    return None
-
-
 def parse_merge_status(result_text):
     text = result_text or ""
     if "STATUS: MERGE_BLOCKED" in text:
@@ -94,7 +74,6 @@ def parse_merge_status(result_text):
     return None
 
 
-MAX_ROUNDS = 2
 MAX_WAVES = 50  # safety backstop for --waves; real projects have far fewer waves than this
 
 _PR_RE = re.compile(r"https://github\.com/[^\s)]+/pull/\d+")
@@ -146,82 +125,49 @@ def _usage_record(step, model, usage):
     return rec
 
 
-def run_ticket_pipeline(ticket, runner, models, timeouts, max_rounds=MAX_ROUNDS, efforts=None, emit=None, merge=False, base=None):
+def run_ticket_pipeline(ticket, runner, models, timeouts, efforts=None, emit=None, merge=False, base=None):
     tid = ticket["id"]
     usages = []
 
-    def step(name, model, timeout, label=None, effort_key=None):
+    def step(name, model, timeout):
         if emit:
-            emit(label or name)
-        effort = (efforts or {}).get(effort_key or name)
+            emit(name)
+        effort = (efforts or {}).get(name)
         suffix = f" --base {base}" if (base and name in ("implementit", "shipit")) else ""
         res = runner(build_claude_cmd(f"/personal:{name} {tid}{suffix}", model, effort=effort), timeout)
         usages.append(_usage_record(name, model, res.usage))
         return res
 
     def fail(at, reason):
-        return TicketResult(tid, True, pr_url, last_review, at, reason, usages, "FAILED", rounds)
-
-    def stall(reason):
-        return TicketResult(tid, True, pr_url, last_review, None, reason, usages, "NEEDS_HUMAN", rounds)
+        return TicketResult(tid, True, pr_url, at, reason, usages, "FAILED")
 
     pr_url = None
-    last_review = None
-    rounds = 0
 
     res = step("implementit", models["implementit"], timeouts["implementit"])
     ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "implementit")
     if not ok:
-        return TicketResult(tid, False, None, None, "implementit", reason, usages, "FAILED", 0)
+        return TicketResult(tid, False, None, "implementit", reason, usages, "FAILED")
 
     res = step("shipit", models["shipit"], timeouts["shipit"])
     ok, reason = classify_outcome(res.returncode, res.result_text, res.timed_out, "shipit")
     if not ok:
-        return TicketResult(tid, True, None, None, "shipit", reason, usages, "FAILED", 0)
+        return TicketResult(tid, True, None, "shipit", reason, usages, "FAILED")
     pr_url = shipit_pr_url(res.result_text)
 
-    while True:
-        rounds += 1
-        review_key = "reviewit" if rounds == 1 else "reviewit_rereview"
-        model = models[review_key]
-        res = step("reviewit", model, timeouts["reviewit"], label=f"reviewit (round {rounds})", effort_key=review_key)
-        if res.timed_out or res.returncode != 0:
-            return fail("reviewit", f"reviewit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
-        last_review = parse_review_status(res.result_text)
-        if last_review == "APPROVED":
-            break
-        if last_review != "CHANGES_REQUESTED":
-            return fail("reviewit", "reviewit emitted no verdict")
-        # Out of address budget: this CHANGES verdict is the confirming re-review that
-        # FOLLOWS the max_rounds-th addressit, so there's nothing left to try. Using `>`
-        # (not `>=`) guarantees the last addressit always gets a re-review — otherwise a
-        # fix made on the final round is never confirmed and the ticket stalls needlessly.
-        if rounds > max_rounds:
-            return stall(f"max rounds ({max_rounds}) reached without approval")
-
-        res = step("addressit", models["addressit"], timeouts["addressit"], label=f"addressit (round {rounds})")
-        if res.timed_out or res.returncode != 0:
-            return fail("addressit", f"addressit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
-        addressed = parse_address_status(res.result_text)
-        if addressed == "PUSHED_BACK":
-            return stall("impasse: reviewer requested changes, addressit pushed back")
-        if addressed == "BLOCKED" or addressed is None:
-            return stall("addressit blocked / emitted no status")
-        # ADDRESSED → loop for re-review
-
     if not merge:
-        return TicketResult(tid, True, pr_url, last_review, None, None, usages, "READY_FOR_REVIEW", rounds)
+        return TicketResult(tid, True, pr_url, None, None, usages, "READY_FOR_REVIEW")
 
     res = step("mergeit", models["mergeit"], timeouts["mergeit"])
     if res.timed_out or res.returncode != 0:
         return fail("mergeit", f"mergeit {'timed out' if res.timed_out else f'exited {res.returncode}'}")
     if parse_merge_status(res.result_text) == "MERGED":
-        return TicketResult(tid, True, pr_url, last_review, None, None, usages, "MERGED", rounds)
-    return stall("merge blocked (CI failed / verdict not ready)")
+        return TicketResult(tid, True, pr_url, None, None, usages, "MERGED")
+    return TicketResult(tid, True, pr_url, None, "merge blocked (CI failed / merge gate not satisfied)",
+                        usages, "NEEDS_HUMAN")
 
 
 _USAGE_FIELDS = ("cost_usd", "input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
-_STEP_ORDER = ("implementit", "shipit", "reviewit", "addressit", "mergeit")
+_STEP_ORDER = ("implementit", "shipit", "mergeit")
 
 
 def _ticket_cost(r):
@@ -270,8 +216,8 @@ def format_summary(results, held):
             line = f"  {r.ticket_id}: FAILED at {r.failed_step} — {r.reason}"
         else:
             pr = r.pr_url or "(no PR)"
-            disp = r.disposition or (r.review_status or "(no review)")
-            line = f"  {r.ticket_id}: {disp} — PR {pr} — {r.rounds} round(s)"
+            disp = r.disposition or "(no disposition)"
+            line = f"  {r.ticket_id}: {disp} — PR {pr}"
             if r.disposition == "NEEDS_HUMAN" and r.reason:
                 line += f" — {r.reason}"
         if r.usage:
@@ -324,7 +270,7 @@ def notify(backend, title, message, notifiers=NOTIFIERS):
 
 
 def _ticket_notification(r):
-    status = f"FAILED at {r.failed_step}" if r.failed_step else (r.disposition or r.review_status or "done")
+    status = f"FAILED at {r.failed_step}" if r.failed_step else (r.disposition or "done")
     title = f"Loop: {r.ticket_id} → {status}"
     parts = [p for p in (r.reason, r.pr_url) if p]
     cost = _ticket_cost(r)
@@ -393,7 +339,7 @@ def _spawn_detached(argv):
 
 
 def parse_args(argv):
-    p = argparse.ArgumentParser(description="Run one wave of loop-ready tickets through implement/ship/review<->address/merge.")
+    p = argparse.ArgumentParser(description="Run one wave of loop-ready tickets through implement/ship/merge.")
     p.add_argument("--project")
     p.add_argument("--repo")
     p.add_argument("--label", default="loop-ready")
@@ -407,7 +353,6 @@ def parse_args(argv):
              "macOS banner; '--notify pushover' uses Pushover (needs PUSHOVER_APP_TOKEN "
              "and PUSHOVER_USER_KEY). Unknown backends are ignored.",
     )
-    p.add_argument("--max-rounds", type=int, default=MAX_ROUNDS)
     p.add_argument("--detach", action="store_true")
     p.add_argument("--merge", action="store_true")
     p.add_argument("--base")
@@ -752,17 +697,15 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, explicit_wave_fn=
         if backend:
             print(f"Notifications: {backend} (per ticket + end of run)")
         for t in wave:
-            for step_name in ("implementit", "shipit", "reviewit"):
-                suffix = f" --base {base}" if (base and step_name in ("implementit", "shipit")) else ""
+            for step_name in ("implementit", "shipit"):
+                suffix = f" --base {base}" if base else ""
                 cmd = build_claude_cmd(f"/personal:{step_name} {t['id']}{suffix}", models[step_name], effort=efforts.get(step_name))
                 print("  would run:", " ".join(cmd))
-            print(f"  then loop: reviewit ↔ addressit up to {args.max_rounds} round(s) "
-                  f"(re-review model {models['reviewit_rereview']}, effort {efforts.get('reviewit_rereview')})")
             if args.merge:
                 cmd = build_claude_cmd(f"/personal:mergeit {t['id']}", models["mergeit"], effort=efforts.get("mergeit"))
                 print("  would run:", " ".join(cmd))
             else:
-                print("  then stop on approval → READY_FOR_REVIEW (merge disabled; pass --merge to auto-merge)")
+                print("  then stop once the PR is open → READY_FOR_REVIEW (merge disabled; pass --merge to auto-merge)")
         if args.waves:
             print(f"--waves: would repeat discovery + this cycle after each wave's merges, "
                   f"until done or a wave makes no progress (cap {MAX_WAVES} waves).")
@@ -795,7 +738,7 @@ def main(argv, runner=subprocess_runner, triage_fn=run_triage, explicit_wave_fn=
         wave_merged = False
         for i, t in enumerate(wave, 1):
             emit(f"[{i}/{len(wave)}] {t['id']}")
-            r = run_ticket_pipeline(t, runner, models, timeouts, max_rounds=args.max_rounds, efforts=efforts, emit=emit, merge=args.merge, base=base)
+            r = run_ticket_pipeline(t, runner, models, timeouts, efforts=efforts, emit=emit, merge=args.merge, base=base)
             if r.disposition == "NEEDS_HUMAN":
                 emit(f"{r.ticket_id} → NEEDS_HUMAN: {r.reason}")
                 excluded_ids.add(r.ticket_id)

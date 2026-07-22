@@ -1,5 +1,11 @@
 # Running code review twice per ticket (pre-ship and post-ship) is intentional, not redundant
 
+> **Partially superseded by [ADR 0005](0005-the-loop-drops-post-ship-review.md).** The loop no
+> longer runs the post-ship pass — it is `implementit → shipit → mergeit`, and `/personal:reviewit`
+> is a manual command now. The part of this ADR that still stands, and stands harder, is the closing
+> instruction: **do not remove the pre-ship `/code-review --fix` pass inside `/implement`.** It is the
+> only code review the loop performs. Read the rest as the history of why the second pass existed.
+
 `/implement` runs `/code-review --fix` internally before a PR exists (pre-ship review); `/personal:reviewit` then runs `/review` against the opened PR (post-ship review) — the same underlying review logic, usually against the same diff. At a glance this looks like paying for the same review twice.
 
 We kept both on purpose. They do different jobs:
