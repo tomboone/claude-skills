@@ -15,7 +15,7 @@ claude-skills/
 ├── .claude-plugin/marketplace.json         # marketplace manifest ("personal-skills")
 ├── claude-global.md                        # canonical global CLAUDE.md (see below)
 ├── plugins/personal/
-│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.16.2)
+│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.16.3)
 │   ├── commands/                           # the slash commands (projectit, planit, …, mergeit)
 │   ├── scripts/loop.py                     # headless autonomous loop (+ test_loop.py)
 │   ├── spec-and-plan-convention.md         # where specs & plans live on disk
@@ -66,7 +66,7 @@ The plugin is organized into three layers, all keyed on a Linear ticket ID:
 | `/shipit` | `{TICKET_ID}` | Commits any outstanding work (Conventional Commit + ticket parenthetical), pushes, and opens a PR against the release branch. Fits the repo's PR template if it has one. |
 | `/reviewit` | `{TICKET_ID}` | **Manual only — not run by the loop.** Reviews the PR via `/review`, **building on any prior review rounds** (reads the existing review thread so re-reviews don't re-flag resolved items), posts findings as a `## Code Review` comment (Standards + Spec axes), and emits `STATUS: APPROVED` / `STATUS: CHANGES_REQUESTED`. |
 | `/addressit` | `{TICKET_ID}` | **Manual only — not run by the loop.** Responds to `/reviewit`'s latest findings: implements valid fixes (testing as it goes), **pushes back with reasoning on findings that are wrong / out of scope / conflict with the spec**, pushes fixes to the PR branch, posts a `## Review Response` comment, and emits `STATUS: ADDRESSED` / `STATUS: PUSHED_BACK` / `STATUS: BLOCKED`. |
-| `/mergeit` | `{TICKET_ID}` | Waits for CI, then merges the PR **with the strategy that matches its base** — squash into a `release/*` branch (one commit per ticket), merge commit into the default branch (preserves history when a release branch integrates). Deletes the branch and syncs the PR's base branch. Blocks on an explicit "Needs changes" review verdict; a *missing* review comment does not block. Emits `STATUS: MERGED` / `STATUS: MERGE_BLOCKED`. |
+| `/mergeit` | `{TICKET_ID}` | Waits for CI, then merges the PR **with the strategy that matches its base** — squash into a `release/*` branch (one commit per ticket), merge commit into the default branch (preserves history when a release branch integrates). Deletes the branch and syncs the PR's base branch. Detects whether the repo runs PR CI by reading `.github/workflows/` (not by trusting `gh pr checks`, which can't distinguish "no CI" from "not registered yet"), waits up to 10 min for a check to register and 30 min for it to finish, and **blocks rather than merging** if a `pull_request` workflow exists but no check appears. Blocks on an explicit "Needs changes" review verdict; a *missing* review comment does not block. Emits `STATUS: MERGED` / `STATUS: MERGE_BLOCKED`. |
 
 ### The two entry points
 
