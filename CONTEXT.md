@@ -13,7 +13,7 @@ The per-ticket depth pass that runs right before implementation, deferred until 
 _Avoid_: project-shaping
 
 **Pre-ship review**:
-A private, self-directed code review that runs inside `/implement`, before a PR exists. Auto-fixes what it finds (`/code-review --fix`) rather than reporting — there's no adversarial party yet to push back against, so blind auto-apply is safe.
+A private, self-directed code review that runs inside `/implement`, before a PR exists. Acts on findings rather than merely reporting them, **scoped by severity**: hard violations of documented standards and genuine defects get fixed; the Fowler smell heuristics `/code-review` reports as judgement calls are listed, not refactored (see `docs/adr/0006-implementit-applies-review-findings-by-severity.md`).
 _Avoid_: code review (ambiguous with post-ship review)
 
 **Post-ship review**:
