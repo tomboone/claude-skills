@@ -23,21 +23,50 @@ Run `gh pr view PR_NUMBER --comments` and look for the most recent `## Code Revi
 
 ## Step 3 — Wait for CI (bounded)
 
-**Do not hand-roll a poll loop.** `gh` blocks server-side and returns the moment checks settle, which is far faster and cheaper than a `sleep`-and-re-check cycle (each of which costs a full agent turn):
+### 3a. Decide whether this repo runs CI on PRs — from the repo, not from `gh pr checks`
+
+**`gh pr checks` cannot tell you.** When it prints `no checks reported on the '<branch>' branch` and exits **1**, that means either "this repo has no CI" *or* "CI hasn't registered a run yet" — identical output, identical exit code, opposite correct responses. Resolve it by looking at the workflow definitions instead:
+
+```bash
+grep -lE '^[[:space:]]*(pull_request|pull_request_target)[[:space:]]*:' .github/workflows/*.y*ml 2>/dev/null
+```
+
+- **Any match** → this repo **does** run CI on pull requests. Checks *will* appear; a missing check means "not yet," never "not configured." Call this `EXPECTS_CI=yes`.
+- **No match** (or no `.github/workflows/` at all) → `EXPECTS_CI=no`.
+
+### 3b. Wait for a check run to register (only when `EXPECTS_CI=yes`)
+
+Registration is not instant. `/personal:shipit` opened the PR moments ago, and GitHub can take **several minutes** to create the check run — five minutes has been observed. `gh pr checks --watch` does **not** wait for checks to *appear*; it returns immediately when there are none.
+
+Poll for a check to exist, up to **10 minutes**, then fall through to 3c:
+
+```bash
+for i in $(seq 1 20); do
+  gh pr checks PR_NUMBER >/dev/null 2>&1 && break
+  gh pr checks PR_NUMBER 2>&1 | grep -qv 'no checks reported' && break
+  sleep 30
+done
+```
+
+If 10 minutes pass with still no check registered, **stop and emit `STATUS: MERGE_BLOCKED`** as the very last line, reporting that the repo defines a `pull_request` workflow but no check run appeared. **Do not merge.** A held ticket is recoverable; a release-branch merge that skipped CI is not.
+
+### 3c. Watch the checks to completion
+
+**Do not hand-roll a poll loop here.** `gh` blocks server-side and returns the moment checks settle, far cheaper than a `sleep`-and-re-check cycle (each of which costs a full agent turn):
 
 ```bash
 gh pr checks PR_NUMBER --watch --fail-fast --interval 10
 ```
 
-Bound it at 30 minutes. Prefer `timeout 1800 gh pr checks …` when `timeout` (or `gtimeout`) is on `PATH` — it's GNU coreutils and is **not** present on a stock macOS, so check with `command -v timeout` first and run the command bare if it's missing. Under the loop this is belt-and-braces anyway: `loop.py` already caps the whole `mergeit` step at 1200s and will kill it first.
+Bound it at 30 minutes. Prefer `timeout 1800 gh pr checks …` when `timeout` (or `gtimeout`) is on `PATH` — it's GNU coreutils and is **not** present on a stock macOS, so check with `command -v timeout` first and run the command bare if it's missing. Under the loop this is belt-and-braces anyway: `loop.py` caps the whole `mergeit` step at 1200s and will kill it first.
 
 Interpret the exit code:
 
 - **0** — every check passed. Proceed to Step 4.
-- **1** — either a check **failed** or **no checks are registered**. These are different situations and the exit code alone can't tell them apart, so disambiguate on the command's output:
-  - Output names one or more failing checks → stop and emit `STATUS: MERGE_BLOCKED` as the very last line, reporting which check failed and its log URL.
-  - Output is `no checks reported on the '<branch>' branch` → this is usually the **registration race**: `/personal:shipit` opened the PR seconds ago and GitHub hasn't attached the workflow yet. Wait 20 seconds (`sleep 20`) and run the command once more. If it still reports no checks, the repo genuinely has no CI on this branch — say so and proceed to Step 4. **Do not treat "no CI configured" as a merge blocker**; plenty of repos have none.
+- **1** — a check **failed** (3a and 3b have already ruled out the no-checks case). Stop and emit `STATUS: MERGE_BLOCKED` as the very last line, reporting which check failed and its log URL. If the output is *still* `no checks reported`, treat it as the 3b timeout: block, don't merge.
 - **124** (`timeout` fired) — checks were still pending at the 30-minute cap. Stop and emit `STATUS: MERGE_BLOCKED` as the very last line, reporting which checks were still running and their log URLs.
+
+When `EXPECTS_CI=no`, skip 3b and 3c entirely: say the repo defines no PR-triggered workflow and proceed to Step 4. **"No CI configured" is not a merge blocker** — plenty of repos have none.
 
 `--watch` streams its own progress, so don't add status lines of your own.
 

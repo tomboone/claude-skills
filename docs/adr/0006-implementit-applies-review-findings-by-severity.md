@@ -12,11 +12,23 @@ Two things were wrong with the old directive.
 
 **What it was auto-applying included judgement calls.** The Standards axis always carries a baseline of twelve Fowler code smells, which the skill itself brackets as *"Always a judgement call... never a hard violation."* Each ships with a prescribed remedy — rename it, extract the shared shape, give the concept its own type, replace with polymorphism, split the module. Blind auto-apply therefore meant performing a dozen categories of speculative refactoring on every ticket, from a review that deliberately refuses to rank its own findings. (The separate marketplace `code-review` plugin filters at 80 confidence for exactly this reason; this skill has no such filter, because it was designed for a person to read.)
 
-## Cost
+## Cost — the hypothesis that motivated this change, and how it failed
 
-This was the loop's single largest expense. A six-ticket run measured `implementit` at **$29.17 of $31.18 total — 93.5%**, with 25.5M cache-read tokens (~4.2M per ticket) against only ~94k cache-write and ~31k output per ticket. That read-to-write ratio is the signature of many turns over a large context, which is what a cascade of accepted refactorings produces: each rename, extraction, or polymorphism conversion is more edits, more re-reads, more follow-up.
+This change was originally made on a cost argument. **That argument did not survive measurement.** The correctness argument above stands on its own; the cost argument is recorded here so it isn't re-litigated.
 
-The observation that prompted the investigation: running `/implement` by hand on the same model and effort, with `/clear` between tickets, cost noticeably less — and still fixed the problems it found. That is the tell. The model acts on hard violations on its own; the `--fix` directive is what dragged in the judgement calls.
+The hypothesis: `implementit` was the loop's dominant expense, and the refactor cascade was why. A six-ticket run measured `implementit` at **$29.17 of $31.18 total — 93.5%**, with 25.5M cache-read tokens (~4.2M per ticket) against only ~94k cache-write and ~31k output per ticket. That read-to-write ratio is the signature of many turns over a large context, which is what a cascade of accepted refactorings would produce. The supporting observation: running `/implement` by hand at the same model and effort, with `/clear` between tickets, cost noticeably less — and still fixed the problems it found.
+
+The first ticket run after this change (NEU-747, plugin 0.16.2) came back at:
+
+| | 6-ticket average, before | NEU-747, after |
+|---|---|---|
+| `implementit` cost | $4.86 | **$4.87** |
+| cache read | ~4.2M | 4.14M |
+| output tokens | ~31.5k | 28.7k |
+
+No movement. One ticket is not conclusive — the prior six ranged $3.18–$7.98, so per-ticket variance is wide — but there is no signal in the predicted direction, and NEU-747 landed on the old mean almost exactly.
+
+So the smell cascade was **not** the cost driver. The remaining explanation is the boring one: this is what Opus at high effort costs to run a full agentic implement against a repo of this size, and the ~4M cache-read tokens per ticket are inherent to a long multi-turn session over a large context rather than to any one instruction. Treat `implementit` cost as a property of the model/effort choice, not as a bug to be prompt-engineered away — if it needs to come down, the lever is model or effort routing (which re-opens the ADR 0005 bet), not the review directive.
 
 ## What this does not change
 

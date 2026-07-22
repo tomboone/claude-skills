@@ -29,7 +29,11 @@ def default_models():
 
 
 def default_timeouts():
-    return {"implementit": 2700, "shipit": 600, "mergeit": 1200}
+    # mergeit: up to 10 min waiting for a check run to register + up to 30 min
+    # watching it run (see mergeit.md Step 3), so the cap must exceed 40 min or
+    # a slow-CI ticket gets killed here and misreported as FAILED rather than
+    # emitting a clean STATUS: MERGE_BLOCKED.
+    return {"implementit": 2700, "shipit": 600, "mergeit": 2700}
 
 
 def default_efforts():
