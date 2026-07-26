@@ -1,6 +1,6 @@
 # claude-skills
 
-This repo holds personal Claude Code plugins — slash commands, scripts, and skills used to run a Linear-ticket-driven development pipeline (plan → implement → ship → review → merge), plus a headless orchestrator (`loop.py`) that drives that pipeline unattended.
+This repo holds personal Claude Code plugins — slash commands, scripts, and skills used to run a Linear-ticket-driven development pipeline (plan → implement → ship → review → merge), plus two ways to chain that pipeline: `/personal:doit` (attended — one ticket, one session) and a headless orchestrator (`loop.py`) that drives it unattended across a wave.
 
 ## Language
 
@@ -27,5 +27,9 @@ A cached, per-ticket file capturing the Linear ticket's intent (description, spe
 A single written spec covering an entire project, produced by `/personal:projectit` Phase 1 and pointed to from the Linear project's description (`**Project spec:**`). Distinct from a per-ticket spec: `/personal:implementit` falls back to it directly when no per-ticket spec exists, trusting its coverage without `/personal:planit`'s sufficiency judgment (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`).
 _Avoid_: project spec, spec (ambiguous with per-ticket spec)
 
+**Attended pipeline run**:
+One ticket driven `implementit → shipit → mergeit` inline in a single interactive session, by `/personal:doit`. Contrasts with the loop, which drives the same state machine unattended across a wave with each step in its own `claude -p` process. The distinction that matters is **warm context vs. cold starts**, not autonomy alone — the phases of an attended run reuse state (branch, base, spec, diff) the earlier phases resolved. See `docs/adr/0007-doit-is-the-attended-single-ticket-pipeline.md`.
+_Avoid_: loop (reserve for `loop.py`)
+
 **Loop-ready**:
-A Linear label `/personal:projectit` applies to a work ticket at creation (alongside `repo:<name>`), meaning `loop.py` may pick it up directly once its `blockedBy` blockers are `Done` — with no `/personal:planit` pass required first. Deselectable per-ticket at the Phase-3 gate for anything that should be planned or reviewed by hand first.
+A Linear label `/personal:projectit` applies to a work ticket at creation (alongside `repo:<name>`), meaning `loop.py` may pick it up directly once its `blockedBy` blockers are `Done` — with no `/personal:planit` pass required first. Deselectable per-ticket at the Phase-3 gate for anything that should be planned or reviewed by hand first. It gates *unattended* pickup only: `/personal:doit` deliberately ignores it, since a human named the ticket.

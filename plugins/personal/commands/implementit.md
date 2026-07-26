@@ -75,4 +75,6 @@ Let `/implement` run its full single-pass execution from here: implement directl
 
 Do not implement anything yourself. Do not invoke `/personal:shipit`. When `/implement` finishes, tell the user to clear context and run `/personal:shipit {TICKET_ID}` when ready.
 
+(**Exception — running under `/personal:doit`:** that command composes this one with `/personal:shipit` and `/personal:mergeit` in a single session, and its Overrides replace this hand-off. Continue straight into its next phase instead of stopping.)
+
 **Completion signal.** Only after `/implement`'s pre-ship review-and-fix pass has actually completed, emit — as the **very last line of your response** — `STATUS: IMPLEMENTED`. This is how the headless loop orchestrator (`loop.py`) confirms the plan was executed; if you stopped early for any reason (no plan, ambiguous input, an error), do **not** emit it.
