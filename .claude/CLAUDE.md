@@ -7,8 +7,9 @@ Personal Claude Code configuration repo — see `README.md` at the repo root for
 
 Unlike the repos the `personal` plugin operates *on*, this repo does not use Linear tickets or
 GitHub Issues for its own development — there are none open, and none in its history. Work is
-tracked via directly-authored spec/plan docs and PRs. Don't run `/projectit`/`/planit` against this
-repo itself, and don't run `/setup-matt-pocock-skills` here — the issue-tracker/triage-label
+tracked via directly-authored spec/plan docs and PRs. Don't run `/projectit`/`/planit`/`/doit`
+against this repo itself (they all key on a Linear ticket ID that doesn't exist here), and don't run
+`/setup-matt-pocock-skills` here — the issue-tracker/triage-label
 scaffolding it writes has nothing to attach to.
 
 ## Domain docs

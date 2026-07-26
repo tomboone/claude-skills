@@ -15,8 +15,8 @@ claude-skills/
 ├── .claude-plugin/marketplace.json         # marketplace manifest ("personal-skills")
 ├── claude-global.md                        # canonical global CLAUDE.md (see below)
 ├── plugins/personal/
-│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.16.5)
-│   ├── commands/                           # the slash commands (projectit, planit, …, mergeit)
+│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.17.0)
+│   ├── commands/                           # the slash commands (projectit, planit, …, mergeit, doit)
 │   ├── scripts/loop.py                     # headless autonomous loop (+ test_loop.py)
 │   ├── spec-and-plan-convention.md         # where specs & plans live on disk
 │   ├── pr-resolution-convention.md         # how a command resolves a PR from a ticket ID
@@ -51,10 +51,15 @@ The plugin is organized into three layers, all keyed on a Linear ticket ID:
    from the ticket ID plus on-disk docs and GitHub/Linear, so each runs in a fresh context with no
    handoff state required (`/implementit`, `/shipit`, `/mergeit`, plus the manual-only `/reviewit`
    and `/addressit`).
-3. **The loop** — a headless orchestrator (`scripts/loop.py`) that chains the pipeline commands into
-   an autonomous, end-to-end implement → ship → merge cycle. `/reviewit` and `/addressit` are
-   **not** part of the loop (see `docs/adr/0005-the-loop-drops-post-ship-review.md`); they remain
-   available as manual commands.
+3. **Orchestration** — two ways to chain those pipeline commands into a full implement → ship →
+   merge cycle:
+   - **`/doit {TICKET_ID}`** — *attended*. One ticket, run inline in one Claude Code session. You
+     pick the ticket and `/clear` between tickets; the three phases share one warm context.
+   - **`scripts/loop.py`** — *headless*. Whole waves of `loop-ready` tickets, unattended, each step
+     its own `claude -p` process.
+
+   `/reviewit` and `/addressit` are **not** part of either (see
+   `docs/adr/0005-the-loop-drops-post-ship-review.md`); they remain available as manual commands.
 
 ## Commands
 
@@ -66,20 +71,49 @@ The plugin is organized into three layers, all keyed on a Linear ticket ID:
 | `/shipit` | `{TICKET_ID}` | Commits any outstanding work (Conventional Commit + ticket parenthetical), pushes, and opens a PR against the release branch. Fits the repo's PR template if it has one. |
 | `/reviewit` | `{TICKET_ID}` | **Manual only — not run by the loop.** Reviews the PR via `/review`, **building on any prior review rounds** (reads the existing review thread so re-reviews don't re-flag resolved items), posts findings as a `## Code Review` comment (Standards + Spec axes), and emits `STATUS: APPROVED` / `STATUS: CHANGES_REQUESTED`. |
 | `/addressit` | `{TICKET_ID}` | **Manual only — not run by the loop.** Responds to `/reviewit`'s latest findings: implements valid fixes (testing as it goes), **pushes back with reasoning on findings that are wrong / out of scope / conflict with the spec**, pushes fixes to the PR branch, posts a `## Review Response` comment, and emits `STATUS: ADDRESSED` / `STATUS: PUSHED_BACK` / `STATUS: BLOCKED`. |
+| `/doit` | `{TICKET_ID} [--base <branch>] [--no-merge]` | **The attended pipeline.** Runs `/implementit` → `/shipit` → `/mergeit` inline in one session, taking a single unblocked ticket from planned to merged on one command. Same state machine as the loop, but attended: the user picks the ticket and `/clear`s between tickets, and the three phases share one warm context instead of three cold `claude -p` starts. Verifies the ticket's `blockedBy` blockers are `Done` first — the `loop-ready` label is deliberately **not** required, since a human chose the ticket. Stops on the first phase that fails (`NO_PLAN` / `FAILED` / `MERGE_BLOCKED`) and reports why. See `docs/adr/0007-doit-is-the-attended-single-ticket-pipeline.md`. |
 | `/mergeit` | `{TICKET_ID}` | Waits for CI, then merges the PR **with the strategy that matches its base** — squash into a `release/*` branch (one commit per ticket), merge commit into the default branch (preserves history when a release branch integrates). Deletes the branch and syncs the PR's base branch. Detects whether the repo runs PR CI by reading `.github/workflows/` (not by trusting `gh pr checks`, which can't distinguish "no CI" from "not registered yet"), waits up to 10 min for a check to register and 30 min for it to finish, and **blocks rather than merging** if a `pull_request` workflow exists but no check appears. Blocks on an explicit "Needs changes" review verdict; a *missing* review comment does not block. Emits `STATUS: MERGED` / `STATUS: MERGE_BLOCKED`. |
 
 ### The two entry points
 
 - **Per-ticket:** `/implementit` → `/shipit` → `/mergeit`, with an optional `/planit` first for
   deeper per-ticket planning, and an optional `/reviewit` ↔ `/addressit` pass between ship and merge
-  when a PR warrants a second opinion.
+  when a PR warrants a second opinion. **`/doit {TICKET_ID}` runs those three in one go** — use it
+  when you don't need to stop between phases, and `/clear` before the next ticket.
 - **Whole-project:** `/projectit` shapes the project into tickets up front, labeling each
-  `loop-ready`; then **each ticket follows the per-ticket flow** above, directly or via
-  `plugins/personal/scripts/loop.py`.
+  `loop-ready`; then **each ticket follows the per-ticket flow** above — by hand, via `/doit`
+  one ticket at a time, or unattended via `plugins/personal/scripts/loop.py`.
 
 When run by hand, the `/reviewit` ↔ `/addressit` step alternates until the reviewer returns
 `APPROVED` (or the two reach an impasse). Ticket statuses are never set by these commands — the GitHub↔Linear connector
 owns status transitions based on branch/PR activity.
+
+## `/doit` — one ticket, one session
+
+```
+/personal:doit NEU-742          # implement → ship → merge, then stop
+/personal:doit NEU-742 --no-merge   # stop once the PR is open
+/personal:doit NEU-742 --base release/1.4
+```
+
+The working rhythm is: `/personal:doit <ticket>` → let it finish → `/clear` (or `/compact`) →
+`/personal:doit <next ticket>`. It checks that the ticket's `blockedBy` blockers are `Done`, then
+runs the three pipeline commands **inline, in this session** — no sub-agents, no `claude -p` — so
+`shipit` and `mergeit` reuse the branch, base, spec, and diff `implementit` already resolved.
+
+It keeps every gate the loop keeps: the mandatory pre-ship `/code-review` pass, CI as the merge gate,
+`MERGE_BLOCKED` instead of a forced merge, and `/reviewit` staying manual. It gives up unattended
+operation and wave discovery — you choose each ticket. `docs/adr/0007-doit-is-the-attended-single-ticket-pipeline.md`
+records why both this and the loop exist.
+
+| Compared on | `/doit` | `loop.py` |
+|---|---|---|
+| Attention | You watch and can interject | Walk away |
+| Scope per invocation | One ticket | A wave (or a whole project with `--waves`) |
+| Ticket selection | You name it | `loop-ready` label triage + blocker check |
+| Where phases run | Inline, one warm context | One cold `claude -p` per step |
+| Model/effort | Whatever the session is on | Per-step routing (Opus/Sonnet/Haiku) |
+| Merging | On by default (`--no-merge` to stop at the PR) | Off by default (`--merge` to enable) |
 
 ## The autonomous loop
 
