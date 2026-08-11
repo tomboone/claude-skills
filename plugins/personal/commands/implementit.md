@@ -62,7 +62,34 @@ the base in headless mode — the loop always supplies `--base`.
 
 ## Step 5 — Implement the plan
 
-Invoke `/implement`, passing whatever design context was resolved in Steps 2–3 (the per-ticket plan/spec, the milestone spec loaded in Step 3 if any, or the project-wide spec if that's what Step 2 fell back to) as the work to implement. Direct it to run its internal `/code-review` pass and to **act on the findings, scoped by severity**:
+Implement the work **directly in this session**, from whatever design context Steps 2–3 resolved
+(the per-ticket plan/spec, the milestone spec loaded in Step 3 if any, or the project-wide spec if
+that's what Step 2 fell back to).
+
+**Deliberately not delegated to `/implement` — do not "simplify" this back into one.** That skill
+is installed from the `mattpocock/skills` marketplace (`~/.agents/.skill-lock.json`) and carries
+`disable-model-invocation: true`, which means only a human typing `/implement` can invoke it. A
+command file cannot: custom commands have been merged into skills, so there is no longer a
+`SlashCommand` tool that could call one programmatically, and the Skill tool enforces the flag.
+Delegating here stalls the entire `implementit → shipit → mergeit` chain — headless under
+`loop.py` and attended under `/personal:doit` alike — at phase 1, with a branch created and
+nothing implemented. Its body was four lines of generic guidance, reproduced as the sequence
+below, so inlining costs nothing.
+
+Execute in this order:
+
+1. **Implement**, using `/tdd` at pre-agreed seams where applicable — failing test first wherever
+   the repo's conventions call for it.
+2. **Typecheck and test as you go**: typechecking regularly, individual test files regularly, and
+   the full suite once at the end. Use the commands the repo's `CLAUDE.md` prescribes (many
+   projects wrap these — don't invoke the underlying tool directly when a task runner is
+   documented).
+3. **Review and fix**: run `/code-review` over the work and act on its findings, scoped by
+   severity per the rules below. `/code-review` is unflagged and model-invocable, so this one is
+   a real skill call.
+4. **Commit** to the current branch.
+
+Act on the review findings **scoped by severity**:
 
 - **Apply** hard violations of a documented repo standard, and genuine defects.
 - **Do not refactor** for the Fowler smell heuristics the Standards axis also reports (Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest) — `/code-review` explicitly marks these as *"always a judgement call, never a hard violation."* Act on one only when it is directly implicated in a real defect; otherwise list it in your summary and leave the code alone.
@@ -71,10 +98,8 @@ Invoke `/implement`, passing whatever design context was resolved in Steps 2–3
 
 **Why the severity scope.** `/code-review` is a read-only reporting skill — it has no `--fix` flag, no severity field, and no confidence threshold, because it was written for a human to read and exercise judgement over. Directing it to blind-apply everything means applying a dozen judgement-call refactorings (each with a prescribed remedy: rename, extract a type, replace with polymorphism, split the module) that the skill deliberately declines to rank. That is both a quality risk and the loop's single largest token cost — see `docs/adr/0006-implementit-applies-review-findings-by-severity.md`.
 
-Let `/implement` run its full single-pass execution from here: implement directly (using `/tdd` at pre-agreed seams where applicable), typecheck/test, pre-ship review-and-fix, commit.
-
-Do not implement anything yourself. Do not invoke `/personal:shipit`. When `/implement` finishes, tell the user to clear context and run `/personal:shipit {TICKET_ID}` when ready.
+Do not invoke `/personal:shipit`. When the review-and-fix pass finishes, tell the user to clear context and run `/personal:shipit {TICKET_ID}` when ready.
 
 (**Exception — running under `/personal:doit`:** that command composes this one with `/personal:shipit` and `/personal:mergeit` in a single session, and its Overrides replace this hand-off. Continue straight into its next phase instead of stopping.)
 
-**Completion signal.** Only after `/implement`'s pre-ship review-and-fix pass has actually completed, emit — as the **very last line of your response** — `STATUS: IMPLEMENTED`. This is how the headless loop orchestrator (`loop.py`) confirms the plan was executed; if you stopped early for any reason (no plan, ambiguous input, an error), do **not** emit it.
+**Completion signal.** Only after the review-and-fix pass in step 3 has actually completed, emit — as the **very last line of your response** — `STATUS: IMPLEMENTED`. This is how the headless loop orchestrator (`loop.py`) confirms the plan was executed; if you stopped early for any reason (no plan, ambiguous input, an error), do **not** emit it.
