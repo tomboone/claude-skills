@@ -1,4 +1,4 @@
-# Review the PR for a Linear ticket using /review and post findings as a PR comment.
+# Review the PR for a Linear ticket using /code-review and post findings as a PR comment.
 # Usage: /personal:reviewit {TICKET_ID}
 
 ## Step 1 — Resolve the PR for this ticket
@@ -34,17 +34,17 @@ BASE_SHA=$(gh pr view PR_NUMBER --json baseRefOid --jq '.baseRefOid')
 HEAD_SHA=$(gh pr view PR_NUMBER --json headRefOid --jq '.headRefOid')
 ```
 
-## Step 4 — Invoke /review
+## Step 4 — Invoke /code-review
 
-Invoke `/review` against `PR_NUMBER`. `/review` has no access to Linear or this repo's docs, so hand it framing directly:
+Invoke `/code-review` against `PR_NUMBER`. `/code-review` has no access to Linear or this repo's docs, so hand it framing directly:
 - The review context bundle from Step 2 (Linear ticket intent + spec/plan) as the requirements to check the diff against; fall back to the PR body only if no bundle context could be gathered.
-- **If `PRIOR_REVIEW_CONTEXT` is non-empty, append it** under a `## Prior review history` heading. Instruct `/review` to treat those findings as already-raised: for each, inspect the current diff to confirm whether it is now resolved and note its status (fixed / still open / intentionally deferred) rather than rediscovering it from scratch. Only surface a prior item as a fresh finding if it remains unaddressed, and do **not** re-flag anything the thread shows the user accepted or deferred.
+- **If `PRIOR_REVIEW_CONTEXT` is non-empty, append it** under a `## Prior review history` heading. Instruct `/code-review` to treat those findings as already-raised: for each, inspect the current diff to confirm whether it is now resolved and note its status (fixed / still open / intentionally deferred) rather than rediscovering it from scratch. Only surface a prior item as a fresh finding if it remains unaddressed, and do **not** re-flag anything the thread shows the user accepted or deferred.
 
-`/review` reports along two axes — **Standards** and **Spec** — not severity tiers. `BASE_SHA`/`HEAD_SHA` from Step 3 pin the exact diff if `/review` needs them.
+`/code-review` reports along two axes — **Standards** and **Spec** — not severity tiers. `BASE_SHA`/`HEAD_SHA` from Step 3 pin the exact diff if `/code-review` needs them.
 
 ## Step 5 — Post findings as a PR comment and emit STATUS
 
-`/review` reports findings under two axes, not severity tiers. Compute the assessment mechanically: **"Needs changes"** if either axis reports any finding at all; **"Ready to merge"** only if both axes are clean. This is a roll-up, not a judgment call — don't weigh severity yourself.
+`/code-review` reports findings under two axes, not severity tiers. Compute the assessment mechanically: **"Needs changes"** if either axis reports any finding at all; **"Ready to merge"** only if both axes are clean. This is a roll-up, not a judgment call — don't weigh severity yourself.
 
 Post the result as a PR review comment:
 ```bash
@@ -59,10 +59,10 @@ Format the comment as (always end with the footer):
 **Assessment:** [Ready to merge / Needs changes]
 
 ## Standards
-[Findings, verbatim from /review, or "None"]
+[Findings, verbatim from /code-review, or "None"]
 
 ## Spec
-[Findings, verbatim from /review, or "None"]
+[Findings, verbatim from /code-review, or "None"]
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```

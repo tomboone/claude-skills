@@ -11,10 +11,12 @@ then run it again on the next ticket. See `docs/adr/0007-doit-is-the-attended-si
 is the entire point: phase 2 and phase 3 reuse state phase 1 already resolved (branch name, base,
 spec, diff), which is what makes this cheaper than three cold-started headless runs.
 
-For each phase, invoke the named command with the SlashCommand tool if it is available; otherwise
-read the command file from `${CLAUDE_PLUGIN_ROOT}/commands/<name>.md` and follow its steps verbatim.
-Either way, the **Overrides** in each phase below take precedence over anything the underlying
-command file says about stopping or handing off.
+For each phase, read the command file from `${CLAUDE_PLUGIN_ROOT}/commands/<name>.md` and follow its
+steps verbatim. There is no tool that invokes a command programmatically — custom commands have been
+merged into skills, and these command files carry no frontmatter `description`, so they are not
+model-invocable at all. Reading the file *is* the mechanism, not a fallback. The **Overrides** in
+each phase below take precedence over anything the underlying command file says about stopping or
+handing off.
 
 ## Step 0 — Preflight: confirm the ticket is workable
 
