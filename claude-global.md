@@ -20,6 +20,40 @@ Always append this footer to GitHub PR descriptions, GitHub PR comments (includi
 
 Do **not** add this footer to git commit messages, and never add a `Co-Authored-By` trailer.
 
+## Linear ticket descriptions
+
+Every ticket you create uses these three headings, whatever its type — bug, feature,
+chore, spike or Story parent — and in this order:
+
+- `## Problem` — what is wrong, missing or unknown, stated so someone else could
+  confirm it without asking you. A bug: what happens, and what should. A feature:
+  what a person cannot do today. A chore: what breaks or slows down if this is
+  left alone. Include a bold `**Evidence:**` line — repro steps, a dated
+  measurement, `file.py:42`, a log line; for new work, the user need or spec
+  section it traces to. **If there is no evidence, write "asserted, not
+  measured"** rather than omitting the line: a confident claim nobody checked is
+  how a wrong fact survives for months.
+- `## Solution` — the approach, in enough detail that the shape of the diff is
+  predictable, plus **the alternative you rejected and why**. That last part is
+  what nobody can reconstruct later. On a Story parent this section is the child
+  breakdown instead. Add a bold `**Not in scope:**` line whenever something is at
+  risk of creeping in — it is what keeps one ticket to one PR.
+- `## Definition of done` — `- [ ]` checkboxes (Linear renders them
+  interactively), each checkable by someone who did not write the code. State the
+  verification, not the intent: "searching `bear` shows the library badge on a
+  tracked result", not "search works". Name the test, migration or doc if the
+  change needs one. A Story parent takes a single completion condition here
+  rather than a checklist.
+
+Close with a `References` line for the spec or plan when one exists. Do **not**
+restate blockers in prose — use Linear's own relations — except where the
+*ordering reason* is non-obvious, which belongs in `Solution`.
+
+This mirrors the Linear team template, which applies only to issues created by
+hand: `save_issue` has no `template` parameter, and templates are honoured in the
+Linear UI, Slack, Asks, Intercom/Zendesk and Zapier but not on the MCP write path.
+The two copies can drift; this one is what governs anything you create.
+
 ## Project type
 
 A project is a **work (ingest) project** if its repo root is inside `~/ingest/`; any project elsewhere is a **personal project**.
