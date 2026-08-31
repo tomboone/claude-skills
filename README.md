@@ -15,12 +15,13 @@ claude-skills/
 ├── .claude-plugin/marketplace.json         # marketplace manifest ("personal-skills")
 ├── claude-global.md                        # canonical global CLAUDE.md (see below)
 ├── plugins/personal/
-│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.19.0)
+│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.19.1)
 │   ├── commands/                           # pipeline commands (projectit, planit, …, mergeit, doit)
 │   │                                       # + wrappers for the Pocock skills the pipeline calls
 │   ├── scripts/loop.py                     # headless autonomous loop (+ test_loop.py)
 │   ├── spec-and-plan-convention.md         # where specs & plans live on disk
 │   ├── pr-resolution-convention.md         # how a command resolves a PR from a ticket ID
+│   ├── github-cli-convention.md            # GitHub goes through `gh`, never a GitHub MCP
 │   └── review-context-convention.md        # the cached review-context bundle reviewit/addressit share
 └── .claude/docs/                           # design specs & plans for this repo's own work
     └── superpowers/                         # retired layout (older tickets); new docs go to
@@ -189,7 +190,7 @@ plugins/personal/scripts/loop.py [--project <name>] [--label loop-ready] \
 | `--label <name>` | Ready-marker label to triage on (default `loop-ready`). |
 | `--tickets ID …` | Bypass triage with an explicit ticket list. Without `--waves`, blocker status is never checked — the given IDs are trusted and run as-is. |
 | `--dry-run` | Run read-only triage and print the wave + the exact `claude -p` commands (including the merge/stop step) without executing. With `--waves`, only wave 1 is previewed (later waves depend on runtime state). |
-| `--check` | Run only the feasibility guard (verifies `claude -p` + Linear/GitHub MCP are reachable). |
+| `--check` | Run only the feasibility guard — a trivial `claude -p` round-trip on Haiku that must echo `LOOP_OK`. It proves the CLI and auth work; it does **not** probe Linear MCP or GitHub reachability. |
 | `--limit N` | Cap the wave size (applies per wave when `--waves` is set). |
 | `--notify [backend]` | Send a notification as each ticket finishes (with its final disposition) and once at the end of the run. Bare `--notify` posts a native **macOS** banner; `--notify pushover` sends via **Pushover** (requires `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` env vars). Off by default. Missing credentials or an unknown backend fail silently — the loop is never affected. |
 | `--detach` | Background the run: re-launch detached, write stdout/stderr to a timestamped `<repo>/.claude/loop/run-*.log` (self-`.gitignore`d), print a `tail -f` watch command, and return immediately. |
@@ -263,6 +264,11 @@ Several commands share on-disk conventions so they behave identically on every m
 - **[`review-context-convention.md`](plugins/personal/review-context-convention.md)** — the cached
   review-context bundle (Linear intent + spec/plan) that `/reviewit` and `/addressit` load-or-generate
   so a review and its response measure the PR against the same ground truth.
+- **[`github-cli-convention.md`](plugins/personal/github-cli-convention.md)** — every GitHub
+  operation goes through the **`gh` CLI**, never a GitHub MCP server. `gh` is present and
+  authenticated everywhere these commands run; a GitHub MCP is configured per-project and absent
+  from most, so a command that reaches for one works in one repo and stalls headlessly in the rest.
+  Used by `/shipit`, `/mergeit`, `/reviewit`, `/addressit`, and `pr-resolution-convention.md`.
 
 A repo can also declare hint keys in its `CLAUDE.md` so `/projectit` and the loop can resolve the
 Linear target without searching:

@@ -5,6 +5,8 @@ argument-hint: "{TICKET_ID} [--base <branch>]"
 
 **CRITICAL: Follow every step in order. Do not skip or reorder steps.**
 
+**All GitHub operations in this command go through the `gh` CLI** — never a GitHub MCP server, even if one is available in the session. See `plugins/personal/github-cli-convention.md`.
+
 ## Step 1 — Guard rails
 
 Confirm we're not on main or a release branch. If we are, stop and tell the user.
