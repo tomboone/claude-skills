@@ -5,6 +5,8 @@ argument-hint: "{TICKET_ID}"
 
 **CRITICAL: Follow every step in order. Do not skip or reorder steps.**
 
+**All GitHub operations in this command go through the `gh` CLI** — never a GitHub MCP server, even if one is available in the session. See `plugins/personal/github-cli-convention.md`.
+
 ## Step 1 — Resolve the PR for this ticket
 
 Resolve `PR_NUMBER` for `{TICKET_ID}` as defined in `plugins/personal/pr-resolution-convention.md`. If no open PR matches, stop and tell the user there's no open PR for `{TICKET_ID}`.

@@ -4,6 +4,8 @@
 
 ## Resolve `PR_NUMBER` for `{TICKET_ID}`
 
+This lookup, and every other GitHub operation in the calling command, uses the `gh` CLI — never a GitHub MCP server. See `plugins/personal/github-cli-convention.md`.
+
 Find the open PR whose head branch is for `{TICKET_ID}`:
 
 ```bash
