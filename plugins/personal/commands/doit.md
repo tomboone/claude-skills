@@ -1,5 +1,10 @@
-# Take one unblocked ticket all the way from planned to merged — implement → ship → merge — in a single interactive session.
-# Usage: /personal:doit {TICKET_ID} [--base <branch>] [--no-merge]
+---
+description: Take one unblocked Linear ticket from planned to merged — implement → ship → merge — in a single interactive session
+argument-hint: "{TICKET_ID} [--base <branch>] [--no-merge]"
+---
+
+**CRITICAL: Follow every step in order. Do not skip or reorder steps. Do not jump ahead to
+implementation.**
 
 This is the **attended** counterpart to `plugins/personal/scripts/loop.py`: the same
 `implementit → shipit → mergeit` state machine, run inline in one Claude Code session on one ticket,
@@ -11,12 +16,11 @@ then run it again on the next ticket. See `docs/adr/0007-doit-is-the-attended-si
 is the entire point: phase 2 and phase 3 reuse state phase 1 already resolved (branch name, base,
 spec, diff), which is what makes this cheaper than three cold-started headless runs.
 
-For each phase, read the command file from `${CLAUDE_PLUGIN_ROOT}/commands/<name>.md` and follow its
-steps verbatim. There is no tool that invokes a command programmatically — custom commands have been
-merged into skills, and these command files carry no frontmatter `description`, so they are not
-model-invocable at all. Reading the file *is* the mechanism, not a fallback. The **Overrides** in
-each phase below take precedence over anything the underlying command file says about stopping or
-handing off.
+Invoke each phase with the **Skill tool** — `Skill({skill: "personal:implementit"})` and so on. A
+command loaded that way is injected into *this* conversation and runs inline, in this context, with
+everything the earlier phases resolved still visible; it does not start a sub-agent. That is what
+makes the warm-context saving real rather than aspirational. The **Overrides** in each phase below
+take precedence over anything the loaded command says about stopping or handing off.
 
 ## Step 0 — Preflight: confirm the ticket is workable
 
@@ -36,15 +40,15 @@ straight into phase 1 — no confirmation gate.
 
 ## Step 1 — Phase 1: implement
 
-Run `/personal:implementit {TICKET_ID}`, threading `--base <branch>` through if `/personal:doit` was
-invoked with it.
+Invoke `personal:implementit` via the Skill tool for `{TICKET_ID}`, threading `--base <branch>`
+through if `/personal:doit` was invoked with it.
 
 **Overrides.**
 - Its closing instruction to "tell the user to clear context and run `/personal:shipit`" does **not**
   apply — you are the thing that runs `/personal:shipit`, immediately, in this same context.
 - Its "Do not invoke `/personal:shipit`" line is likewise overridden here. It exists to keep
   `implementit` single-purpose when run standalone; `/personal:doit` is the composed pipeline.
-- Everything else stands unchanged — in particular the pre-ship `/code-review` pass and its
+- Everything else stands unchanged — in particular the pre-ship `/personal:code-review` pass and its
   severity scoping (ADR 0006) are **mandatory** and must not be skipped or trimmed for speed.
 
 **Outcomes.**
@@ -60,7 +64,8 @@ Carry forward, without re-deriving them later: the **branch name**, the resolved
 
 ## Step 2 — Phase 2: ship
 
-Run `/personal:shipit {TICKET_ID}`, threading the same `--base <branch>` if it was supplied.
+Invoke `personal:shipit` via the Skill tool for `{TICKET_ID}`, threading the same `--base <branch>`
+if it was supplied.
 
 **Overrides.**
 - Its Step 1 guard rails (not on main, branch name contains the ticket ID) are already satisfied by
@@ -79,7 +84,7 @@ Run `/personal:shipit {TICKET_ID}`, threading the same `--base <branch>` if it w
 
 ## Step 3 — Phase 3: merge
 
-Run `/personal:mergeit {TICKET_ID}`.
+Invoke `personal:mergeit` via the Skill tool for `{TICKET_ID}`.
 
 **Overrides.**
 - Its Step 1 PR resolution is already answered — use the PR number and base captured in phase 2.

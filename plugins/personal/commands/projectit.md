@@ -1,5 +1,9 @@
-# Scaffold a Linear project: brainstorm it, break it into milestones, stories, and work tickets, and create them in Linear, labeled loop-ready for immediate pickup by loop.py. Per-ticket specs/plans can still be authored just-in-time with /personal:planit when the project-wide spec isn't enough for a given ticket.
-# Usage: /personal:projectit [--dry-run] ["high-level project idea"]
+---
+description: "Scaffold a Linear project: brainstorm it, break it into milestones, stories, and work tickets, and create them in Linear"
+argument-hint: "[--dry-run] [\"high-level project idea\"]"
+---
+
+**CRITICAL: Follow every step in order. Do not skip or reorder steps.**
 
 ## Conventions used by this command
 
@@ -7,6 +11,9 @@
 - **Never** set issue `status` — the GitHub↔Linear connector owns it.
 - **Labels:** work tickets are created with `loop-ready` and `repo:<name>` (see Phase 3) so they're immediately eligible for `loop.py` once their blockers are `Done` — no mandatory `/personal:planit` pass first. Deselectable per-ticket at the Phase-3 gate. Stories get no labels.
 - Create nothing in Linear until after the Phase 3 gate.
+- **Per-ticket planning stays just-in-time:** tickets created here are `loop-ready` immediately;
+  a per-ticket spec is authored with `/personal:planit` later, only when the project-wide spec
+  turns out not to cover a given ticket well enough.
 
 ## Phase 0 — Resolve the Linear target  ■ gate
 
@@ -35,7 +42,7 @@
 
 ## Phase 1 — Project description  ■ gate
 
-Run a `/grilling` session, using `/domain-modeling` alongside it, framed on the idea + initiative
+Run a `/personal:grilling` session, using `/personal:domain-modeling` alongside it, framed on the idea + initiative
 context to produce a thorough project description (purpose, scope, goals) — updating `CONTEXT.md`
 and any ADRs inline as decisions crystallize. **■ Gate:** user approves.
 

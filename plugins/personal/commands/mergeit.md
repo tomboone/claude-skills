@@ -1,5 +1,9 @@
-# Wait for CI to pass, then merge the PR for a Linear ticket, clean up branches, and sync the base branch.
-# Usage: /personal:mergeit {TICKET_ID}
+---
+description: Wait for CI to pass, then merge a Linear ticket's PR, clean up branches, and sync the base
+argument-hint: "{TICKET_ID}"
+---
+
+**CRITICAL: Follow every step in order. Do not skip or reorder steps.**
 
 ## Step 1 — Resolve the PR for this ticket
 
@@ -19,7 +23,7 @@ Run `gh pr view PR_NUMBER --comments` and look for the most recent `## Code Revi
 
 - If one exists and its **Assessment is "Needs changes"**, do **not** prompt — stop and emit `STATUS: MERGE_BLOCKED` as the very last line, noting the unaddressed findings.
 - If one exists and its **Assessment is "Ready to merge"**, proceed.
-- If there is **no** `## Code Review` comment, proceed. The loop no longer runs `/personal:reviewit` — `/personal:implementit` performs its `/code-review` pass before the PR is opened, so a loop-driven PR legitimately has no review comment and CI is the gate. (Run `/personal:reviewit {TICKET_ID}` by hand first if you want a recorded verdict on this PR.)
+- If there is **no** `## Code Review` comment, proceed. The loop no longer runs `/personal:reviewit` — `/personal:implementit` performs its `/personal:code-review` pass before the PR is opened, so a loop-driven PR legitimately has no review comment and CI is the gate. (Run `/personal:reviewit {TICKET_ID}` by hand first if you want a recorded verdict on this PR.)
 
 ## Step 3 — Wait for CI (bounded)
 

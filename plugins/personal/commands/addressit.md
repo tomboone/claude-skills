@@ -1,5 +1,10 @@
-# Respond to /reviewit's findings: implement valid fixes, push back on unnecessary ones, push to the PR branch, and post the disposition as a comment.
-# Usage: /personal:addressit {TICKET_ID}
+---
+description: "Respond to /personal:reviewit findings: fix what is valid, push back on what is not, and post the disposition"
+argument-hint: "{TICKET_ID}"
+---
+
+**CRITICAL: Follow every step in order. Do not skip or reorder steps. Do not jump ahead to
+implementation.**
 
 ## Step 1 — Resolve the PR for this ticket
 
