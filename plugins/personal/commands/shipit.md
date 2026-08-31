@@ -1,5 +1,9 @@
-# Commit any uncommitted work, push the branch, and open a PR against the release branch (or the repo's default branch when there is none).
-# Usage: /personal:shipit {TICKET_ID} [--base <branch>]
+---
+description: Commit uncommitted work, push the branch, and open a PR
+argument-hint: "{TICKET_ID} [--base <branch>]"
+---
+
+**CRITICAL: Follow every step in order. Do not skip or reorder steps.**
 
 ## Step 1 — Guard rails
 
@@ -81,6 +85,6 @@ Use `gh pr create` with:
 
 ## Step 8 — Hand off
 
-Show the PR URL. (**Exception — running under `/personal:doit`:** continue straight into its merge phase in this same session; its Overrides replace this hand-off.) Otherwise tell the user to clear context and run `/personal:mergeit {TICKET_ID}` when ready — or `/personal:reviewit {TICKET_ID}` first if this PR warrants a second opinion beyond the `/code-review` pass `/personal:implementit` already ran. Stop here — do not wait for CI, do not merge.
+Show the PR URL. (**Exception — running under `/personal:doit`:** continue straight into its merge phase in this same session; its Overrides replace this hand-off.) Otherwise tell the user to clear context and run `/personal:mergeit {TICKET_ID}` when ready — or `/personal:reviewit {TICKET_ID}` first if this PR warrants a second opinion beyond the `/personal:code-review` pass `/personal:implementit` already ran. Stop here — do not wait for CI, do not merge.
 
 Then, as the **very last line of your response**, emit `STATUS: SHIPPED`. (The headless loop orchestrator keys on the PR URL; this sentinel keeps the status contract uniform across commands.)

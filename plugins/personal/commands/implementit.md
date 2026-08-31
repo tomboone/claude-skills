@@ -1,5 +1,10 @@
-# Set up the work branch and execute the implementation plan for a Linear ticket.
-# Usage: /personal:implementit {TICKET_ID} [--base <branch>]
+---
+description: Set up the work branch and implement a Linear ticket from its spec or plan
+argument-hint: "{TICKET_ID} [--base <branch>]"
+---
+
+**CRITICAL: Follow every step in order. Do not skip or reorder steps. Do not jump ahead to
+implementation.**
 
 ## Step 1 — Resolve the docs directory
 
@@ -21,7 +26,7 @@ Work the sources below **in order** and stop at the first that resolves. `STATUS
 **1. A per-ticket file named for the ticket.**
 - If exactly one match is found across both plan layouts, proceed with it.
 - If multiple match, list them and ask the user which to use.
-- If none match, check for a spec file containing `{TICKET_ID}` in `DOCS_DIR/specs/` **and** `DOCS_DIR/superpowers/specs/` — a spec without a separate plan is acceptable input (this is the common case now: `/personal:planit` authors a spec only, and `/implement` works straight from it).
+- If none match, check for a spec file containing `{TICKET_ID}` in `DOCS_DIR/specs/` **and** `DOCS_DIR/superpowers/specs/` — a spec without a separate plan is acceptable input (this is the common case now: `/personal:planit` authors a spec only, and this command implements straight from it).
 
 **2. A pointer in the ticket's own description.** Fetch `{TICKET_ID}` via the Linear MCP and read **its own description** for a line naming a spec or plan — `/personal:projectit` writes one on every ticket it creates, in the form ``Spec: `docs/specs/NEU-638-*.md` §5`` (a `Plan:` line is equally valid). **Resolve globs**: `NEU-638-*.md` is a real pointer, not a literal filename — expand it against `DOCS_DIR` and use the match. A section marker (`§5`) narrows *what to read within the file*; it does not make the pointer unusable. This is the most direct signal available and is checked before any project-level lookup.
 
@@ -68,35 +73,30 @@ that's what Step 2 fell back to).
 
 **Deliberately not delegated to `/implement` — do not "simplify" this back into one.** That skill
 is installed from the `mattpocock/skills` marketplace (`~/.agents/.skill-lock.json`) and carries
-`disable-model-invocation: true`, which means only a human typing `/implement` can invoke it. A
-command file cannot: custom commands have been merged into skills, so there is no longer a
-`SlashCommand` tool that could call one programmatically, and the Skill tool enforces the flag.
-Delegating here stalls the entire `implementit → shipit → mergeit` chain — headless under
-`loop.py` and attended under `/personal:doit` alike — at phase 1, with a branch created and
-nothing implemented. Its body was four lines of generic guidance, reproduced as the sequence
-below, so inlining costs nothing.
+`disable-model-invocation: true`. The Skill tool enforces that flag and refuses the call outright
+(*"Skill implement cannot be used with Skill tool due to disable-model-invocation"*), so only a
+human typing `/implement` can reach it. This is a property of that one skill, not of commands in
+general — every `/personal:*` command here **is** Skill-invocable. Delegating to `/implement`
+stalls the entire `implementit → shipit → mergeit` chain — headless under `loop.py` and attended
+under `/personal:doit` alike — at phase 1, with a branch created and nothing implemented. Its body
+was four lines of generic guidance, reproduced as the sequence below, so inlining costs nothing.
 
 Execute in this order:
 
-1. **Implement**, using `/tdd` at pre-agreed seams where applicable — failing test first wherever
-   the repo's conventions call for it.
+1. **Implement**, invoking `personal:tdd` at pre-agreed seams where applicable — failing test first
+   wherever the repo's conventions call for it.
 2. **Typecheck and test as you go**: typechecking regularly, individual test files regularly, and
    the full suite once at the end. Use the commands the repo's `CLAUDE.md` prescribes (many
    projects wrap these — don't invoke the underlying tool directly when a task runner is
    documented).
-3. **Review and fix**: run `/code-review` over the work and act on its findings, scoped by
-   severity per the rules below. `/code-review` is unflagged and model-invocable, so this one is
-   a real skill call.
+3. **Review and fix**: invoke `personal:code-review` over the work and act on its findings. That
+   wrapper owns the severity scoping and the sub-agent model routing — follow it as written rather
+   than restating the rules here.
 4. **Commit** to the current branch.
 
-Act on the review findings **scoped by severity**:
-
-- **Apply** hard violations of a documented repo standard, and genuine defects.
-- **Do not refactor** for the Fowler smell heuristics the Standards axis also reports (Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest) — `/code-review` explicitly marks these as *"always a judgement call, never a hard violation."* Act on one only when it is directly implicated in a real defect; otherwise list it in your summary and leave the code alone.
+Apply the findings **scoped by severity**, per the rules in `personal:code-review` — hard violations of a documented repo standard and genuine defects get fixed; the Fowler smell heuristics the Standards axis reports as judgement calls get listed in your summary, not refactored (`docs/adr/0006-implementit-applies-review-findings-by-severity.md`).
 
 **This review pass is not optional and must not be skipped.** It is the only code review the loop performs: the loop runs `implementit → shipit → mergeit` and no longer runs a post-ship `/personal:reviewit` pass (see `docs/adr/0005-the-loop-drops-post-ship-review.md`). Run `/personal:reviewit {TICKET_ID}` by hand afterwards if a ticket warrants a second, judgment-preserving opinion on the open PR.
-
-**Why the severity scope.** `/code-review` is a read-only reporting skill — it has no `--fix` flag, no severity field, and no confidence threshold, because it was written for a human to read and exercise judgement over. Directing it to blind-apply everything means applying a dozen judgement-call refactorings (each with a prescribed remedy: rename, extract a type, replace with polymorphism, split the module) that the skill deliberately declines to rank. That is both a quality risk and the loop's single largest token cost — see `docs/adr/0006-implementit-applies-review-findings-by-severity.md`.
 
 Do not invoke `/personal:shipit`. When the review-and-fix pass finishes, tell the user to clear context and run `/personal:shipit {TICKET_ID}` when ready.
 
