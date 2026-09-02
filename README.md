@@ -85,7 +85,7 @@ a name this repo controls rather than a vendored skill directly:
 |---|---|---|
 | `/personal:code-review` | `code-review` | Routes the **Standards** sub-agent to Haiku (rubric matching) and keeps **Spec** on the session model (judgement). Owns the severity scoping `/personal:implementit` applies to the findings — fix hard violations and real defects, list the Fowler judgement-call smells rather than refactoring them (ADR 0006). |
 | `/personal:tdd` | `tdd` | The "at pre-agreed seams, where the repo's conventions call for it" framing `/personal:implementit` uses — not a blanket instruction to test-drive everything. |
-| `/personal:grilling` | `grilling` | Notes that `/personal:planit` and `/personal:projectit` run it alongside domain-modeling, and that neither writes the spec file. |
+| `/personal:grilling` | `grilling` | Notes that `/personal:planit` and `/personal:projectit` run it alongside domain-modeling, and that neither writes the spec file. Pins the interview protocol: one `AskUserQuestion` per question, 2–4 keystroke-answerable options, recommendation first. |
 | `/personal:domain-modeling` | `domain-modeling` | Same pairing, plus the expectation that `CONTEXT.md` and ADRs are updated inline. |
 
 They also make the plugin's dependency on `mattpocock/skills` visible instead of implicit. The
