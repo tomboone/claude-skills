@@ -46,6 +46,8 @@ Run a `/personal:grilling` session, using `/personal:domain-modeling` alongside 
 context to produce a thorough project description (purpose, scope, goals) — updating `CONTEXT.md`
 and any ADRs inline as decisions crystallize. **■ Gate:** user approves.
 
+**Ask one question at a time.** Every question goes out as its own `AskUserQuestion` call — one entry in `questions`, answered before the next is asked, never a batch. Give each one 2–4 concrete options with your recommendation first, labelled `(Recommended)`, so the user can answer with a single keystroke; fall back to prose only when the answers genuinely can't be enumerated. (Full protocol: `/personal:grilling`.)
+
 Once approved, resolve `DOCS_DIR` for the repo `/personal:projectit` is being run in (per
 `spec-and-plan-convention.md`), then write a **project-wide spec** to
 `DOCS_DIR/specs/<project-slug>-project-spec.md` (`<project-slug>` = hyphenated project name;
