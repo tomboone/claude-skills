@@ -1,4 +1,5 @@
 ---
+name: reviewit
 description: Review a Linear ticket's PR and post the findings as a PR comment
 argument-hint: "{TICKET_ID}"
 ---
@@ -9,7 +10,7 @@ argument-hint: "{TICKET_ID}"
 
 ## Step 1 — Resolve the PR for this ticket
 
-Resolve `PR_NUMBER` for `{TICKET_ID}` as defined in `plugins/personal/pr-resolution-convention.md`. If no open PR matches, stop and tell the user there's no open PR for `{TICKET_ID}` (did they run `/personal:shipit {TICKET_ID}`?).
+Resolve `PR_NUMBER` for `{TICKET_ID}` as defined in `plugins/personal/pr-resolution-convention.md`. If no open PR matches, stop and tell the user there's no open PR for `{TICKET_ID}` (did they run `/shipit {TICKET_ID}`?).
 
 ## Step 2 — Load review context and fetch the live PR state
 
@@ -40,13 +41,13 @@ BASE_SHA=$(gh pr view PR_NUMBER --json baseRefOid --jq '.baseRefOid')
 HEAD_SHA=$(gh pr view PR_NUMBER --json headRefOid --jq '.headRefOid')
 ```
 
-## Step 4 — Invoke /personal:code-review
+## Step 4 — Run the code-review skill
 
-Invoke `personal:code-review` against `PR_NUMBER`. The underlying skill has no access to Linear or this repo's docs, so hand it framing directly:
+Invoke the `code-review` skill against `PR_NUMBER`. The underlying skill has no access to Linear or this repo's docs, so hand it framing directly:
 - The review context bundle from Step 2 (Linear ticket intent + spec/plan) as the requirements to check the diff against; fall back to the PR body only if no bundle context could be gathered.
-- **If `PRIOR_REVIEW_CONTEXT` is non-empty, append it** under a `## Prior review history` heading. Instruct `/personal:code-review` to treat those findings as already-raised: for each, inspect the current diff to confirm whether it is now resolved and note its status (fixed / still open / intentionally deferred) rather than rediscovering it from scratch. Only surface a prior item as a fresh finding if it remains unaddressed, and do **not** re-flag anything the thread shows the user accepted or deferred.
+- **If `PRIOR_REVIEW_CONTEXT` is non-empty, append it** under a `## Prior review history` heading. Instruct it to treat those findings as already-raised: for each, inspect the current diff to confirm whether it is now resolved and note its status (fixed / still open / intentionally deferred) rather than rediscovering it from scratch. Only surface a prior item as a fresh finding if it remains unaddressed, and do **not** re-flag anything the thread shows the user accepted or deferred.
 
-It reports along two axes — **Standards** and **Spec** — not severity tiers, and routes the Standards sub-agent to a cheaper model. `BASE_SHA`/`HEAD_SHA` from Step 3 pin the exact diff if it needs them. **This command reports findings; it does not apply them** — the severity scoping in the wrapper binds `/personal:implementit`, not this command.
+It reports along two axes — **Standards** and **Spec** — not severity tiers. **Run the Standards sub-agent on Haiku** — checklist matching against documented rules and a fixed smell list is rubric work — and keep the **Spec** sub-agent on the session's own model, where judging whether the implementation honours the spec's intent actually needs judgement. `BASE_SHA`/`HEAD_SHA` from Step 3 pin the exact diff if it needs them. **This command reports findings; it does not apply them** — the severity scoping that governs *acting* on findings binds `/implementit`, not this command.
 
 ## Step 5 — Post findings as a PR comment and emit STATUS
 
@@ -81,7 +82,7 @@ If prior review history was available, briefly note in the comment which previou
 STATUS: CHANGES_REQUESTED
 ```
 
-**If the assessment is "Ready to merge":** tell the user to clear context and run `/personal:mergeit {TICKET_ID}` when ready. Then, as the **very last line of your response**, emit:
+**If the assessment is "Ready to merge":** tell the user to clear context and run `/mergeit {TICKET_ID}` when ready. Then, as the **very last line of your response**, emit:
 
 ```
 STATUS: APPROVED

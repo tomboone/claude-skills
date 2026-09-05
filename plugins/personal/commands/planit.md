@@ -1,4 +1,5 @@
 ---
+name: planit
 description: Research a Linear ticket, then confirm its spec is implementation-ready or grill it into shape
 argument-hint: "{TICKET_ID}"
 ---
@@ -26,7 +27,7 @@ Use the Linear MCP to fetch ticket `{TICKET_ID}`. Extract:
 - Parent ticket, sub-issues, and directly related tickets — fetch each and note how they relate
 - Any comments containing decisions, constraints, or clarifications (ignore status-update noise)
 - **Parent milestone (shared contracts):** fetch the ticket's parent milestone and read its description; surface any **Shared contracts** / cross-cutting decisions it records — the plan must honor these.
-- **Project-wide spec:** fetch the ticket's parent Linear project's description; if it contains a `**Project spec:**` line (written by `/personal:projectit` Phase 1), resolve and read that file too — it may already cover this ticket in full.
+- **Project-wide spec:** fetch the ticket's parent Linear project's description; if it contains a `**Project spec:**` line (written by `/projectit` Phase 1), resolve and read that file too — it may already cover this ticket in full.
 - **Merged dependencies as ground truth:** for each `blockedBy` (or directly related) ticket that is already Done/merged, read its **actual shipped spec** (`DOCS_DIR/specs/<DEP-ID>-*.md`, or `DOCS_DIR/superpowers/specs/<DEP-ID>-*.md` for older tickets) and the merged code it produced — not just the Linear text — so this plan matches what was really built.
 
 Summarise what you've gathered. Flag any ambiguities that would need resolving before implementation.
@@ -44,16 +45,16 @@ Read whichever exists (both, if both exist) fully. Evaluate whether the two toge
 - Key technical decisions and constraints
 - Any known unknowns explicitly called out as out of scope or deferred
 
-**If sufficient:** Tell the user it looks implementation-ready — name which source(s) covered it (per-ticket file, project-wide spec, or both) and give a one-paragraph summary. Tell the user to clear context and run `/personal:implementit {TICKET_ID}` when ready. Stop here — do not begin implementation.
+**If sufficient:** Tell the user it looks implementation-ready — name which source(s) covered it (per-ticket file, project-wide spec, or both) and give a one-paragraph summary. Tell the user to clear context and run `/implementit {TICKET_ID}` when ready. Stop here — do not begin implementation.
 
 **If insufficient (or nothing found at all):** Tell the user what's missing. Then continue to Step 4.
 
 ## Step 4 — Grill it into a spec
 
-Present the ticket context you gathered in Step 2 — including the parent milestone's **Shared contracts**, the project-wide spec (if any), and any merged dependencies' shipped specs/code — as the starting point for design, then run a `/personal:grilling` session, using `/personal:domain-modeling` alongside it. Frame the problem using the ticket title, description, and any relevant attached docs or related ticket context you fetched, so the design honors the established contracts and matches what was actually built. Update `CONTEXT.md` and any ADRs inline as decisions crystallize. Do not implement anything yourself.
+Present the ticket context you gathered in Step 2 — including the parent milestone's **Shared contracts**, the project-wide spec (if any), and any merged dependencies' shipped specs/code — as the starting point for design, then run a `/grilling` session, using `/domain-modeling` alongside it. Frame the problem using the ticket title, description, and any relevant attached docs or related ticket context you fetched, so the design honors the established contracts and matches what was actually built. Update `CONTEXT.md` and any ADRs inline as decisions crystallize. Do not implement anything yourself.
 
-**Ask one question at a time.** Every question goes out as its own `AskUserQuestion` call — one entry in `questions`, answered before the next is asked, never a batch. Give each one 2–4 concrete options with your recommendation first, labelled `(Recommended)`, so the user can answer with a single keystroke; fall back to prose only when the answers genuinely can't be enumerated. (Full protocol: `/personal:grilling`.)
+**Ask one question at a time.** Every question goes out as its own `AskUserQuestion` call — one entry in `questions`, answered before the next is asked, never a batch. Give each one 2–4 concrete options with your recommendation first, labelled `(Recommended)`, so the user can answer with a single keystroke; fall back to prose only when the answers genuinely can't be enumerated.
 
-`/personal:grilling`/`/personal:domain-modeling` sharpen the design and the repo's shared vocabulary — they do not, on their own, produce a per-ticket spec file. Once the session reaches shared understanding, write the spec yourself to `DOCS_DIR/specs/{TICKET_ID}-<slug>.md` (create the folder if missing): what to build and why, acceptance criteria, key technical decisions and constraints, anything explicitly out of scope or deferred. This is the file `/personal:implementit` will look for by ticket ID — no separate step-by-step implementation plan is authored; `/personal:implementit` implements straight from this spec.
+`/grilling`/`/domain-modeling` sharpen the design and the repo's shared vocabulary — they do not, on their own, produce a per-ticket spec file. Once the session reaches shared understanding, write the spec yourself to `DOCS_DIR/specs/{TICKET_ID}-<slug>.md` (create the folder if missing): what to build and why, acceptance criteria, key technical decisions and constraints, anything explicitly out of scope or deferred. This is the file `/implementit` will look for by ticket ID — no separate step-by-step implementation plan is authored; `/implementit` implements straight from this spec.
 
-When done, tell the user to clear context and run `/personal:implementit {TICKET_ID}` when ready. Stop here.
+When done, tell the user to clear context and run `/implementit {TICKET_ID}` when ready. Stop here.

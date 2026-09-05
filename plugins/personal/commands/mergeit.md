@@ -1,4 +1,5 @@
 ---
+name: mergeit
 description: Wait for CI to pass, then merge a Linear ticket's PR, clean up branches, and sync the base
 argument-hint: "{TICKET_ID}"
 ---
@@ -21,11 +22,11 @@ Call that `BASE`.
 
 ## Step 2 — Check the review verdict (headless-safe, never prompt)
 
-Run `gh pr view PR_NUMBER --comments` and look for the most recent `## Code Review` comment posted by `/personal:reviewit`.
+Run `gh pr view PR_NUMBER --comments` and look for the most recent `## Code Review` comment posted by `/reviewit`.
 
 - If one exists and its **Assessment is "Needs changes"**, do **not** prompt — stop and emit `STATUS: MERGE_BLOCKED` as the very last line, noting the unaddressed findings.
 - If one exists and its **Assessment is "Ready to merge"**, proceed.
-- If there is **no** `## Code Review` comment, proceed. The loop no longer runs `/personal:reviewit` — `/personal:implementit` performs its `/personal:code-review` pass before the PR is opened, so a loop-driven PR legitimately has no review comment and CI is the gate. (Run `/personal:reviewit {TICKET_ID}` by hand first if you want a recorded verdict on this PR.)
+- If there is **no** `## Code Review` comment, proceed. The loop no longer runs `/reviewit` — `/implementit` performs its `/code-review` pass before the PR is opened, so a loop-driven PR legitimately has no review comment and CI is the gate. (Run `/reviewit {TICKET_ID}` by hand first if you want a recorded verdict on this PR.)
 
 ## Step 3 — Wait for CI (bounded)
 
@@ -44,7 +45,7 @@ Pass the **directory** to `grep -r`; do not glob the filenames. Under `zsh` — 
 
 ### 3b. Wait for a check run to register (only when `EXPECTS_CI=yes`)
 
-Registration is not instant. `/personal:shipit` opened the PR moments ago, and GitHub can take **several minutes** to create the check run — five minutes has been observed. `gh pr checks --watch` does **not** wait for checks to *appear*; it returns immediately when there are none.
+Registration is not instant. `/shipit` opened the PR moments ago, and GitHub can take **several minutes** to create the check run — five minutes has been observed. `gh pr checks --watch` does **not** wait for checks to *appear*; it returns immediately when there are none.
 
 Poll for a check to exist, up to **10 minutes**, then fall through to 3c:
 

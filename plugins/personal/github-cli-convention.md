@@ -39,15 +39,15 @@ was doing the right thing.
 
 | Command | Uses |
 |---|---|
-| `/personal:shipit` | `gh pr create` |
-| `/personal:mergeit` | `gh pr view --comments`, `gh pr checks`, `gh pr checks --watch`, `gh pr merge` |
-| `/personal:reviewit` | `gh pr view`, `gh pr diff`, `gh pr view --json baseRefOid/headRefOid`, `gh pr comment` |
-| `/personal:addressit` | `gh pr view`, `gh pr diff`, `gh pr checkout`, `gh pr comment` |
+| `/shipit` | `gh pr create` |
+| `/mergeit` | `gh pr view --comments`, `gh pr checks`, `gh pr checks --watch`, `gh pr merge` |
+| `/reviewit` | `gh pr view`, `gh pr diff`, `gh pr view --json baseRefOid/headRefOid`, `gh pr comment` |
+| `/addressit` | `gh pr view`, `gh pr diff`, `gh pr checkout`, `gh pr comment` |
 | `pr-resolution-convention.md` | `gh pr list --state open --json number,headRefName,title` |
 
 Anything added later belongs in this table.
 
-Note that **CI detection is deliberately not a `gh` call** — `/personal:mergeit` reads
+Note that **CI detection is deliberately not a `gh` call** — `/mergeit` reads
 `.github/workflows/` from disk with `grep -r`, because `gh pr checks` cannot distinguish "this repo
 has no CI" from "the check has not registered yet". That is a correctness decision, not an exception
 to this convention.

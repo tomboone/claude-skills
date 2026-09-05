@@ -1,4 +1,5 @@
 ---
+name: doit
 description: Take one unblocked Linear ticket from planned to merged — implement → ship → merge — in a single interactive session
 argument-hint: "{TICKET_ID} [--base <branch>] [--no-merge]"
 ---
@@ -16,7 +17,7 @@ then run it again on the next ticket. See `docs/adr/0007-doit-is-the-attended-si
 is the entire point: phase 2 and phase 3 reuse state phase 1 already resolved (branch name, base,
 spec, diff), which is what makes this cheaper than three cold-started headless runs.
 
-Invoke each phase with the **Skill tool** — `Skill({skill: "personal:implementit"})` and so on. A
+Invoke each phase with the **Skill tool** — `Skill({skill: "implementit"})` and so on. A
 command loaded that way is injected into *this* conversation and runs inline, in this context, with
 everything the earlier phases resolved still visible; it does not start a sub-agent. That is what
 makes the warm-context saving real rather than aspirational. The **Overrides** in each phase below
@@ -32,7 +33,7 @@ Fetch `{TICKET_ID}` via the Linear MCP. Then:
    title, current status) and emit `STATUS: BLOCKED` as the very last line.
 3. **Do not require the `loop-ready` label.** That label is `loop.py`'s triage filter — it answers
    "may an unattended wave pick this up?", which is not the question here, because you picked the
-   ticket by hand. A hand-created ticket with no label is a perfectly valid `/personal:doit` target.
+   ticket by hand. A hand-created ticket with no label is a perfectly valid `/doit` target.
    Do not check for it and do not warn about its absence.
 
 Say in one line what you're about to do (ticket ID, title, and whether merging is in scope), then go
@@ -40,20 +41,20 @@ straight into phase 1 — no confirmation gate.
 
 ## Step 1 — Phase 1: implement
 
-Invoke `personal:implementit` via the Skill tool for `{TICKET_ID}`, threading `--base <branch>`
-through if `/personal:doit` was invoked with it.
+Invoke `implementit` via the Skill tool for `{TICKET_ID}`, threading `--base <branch>`
+through if `/doit` was invoked with it.
 
 **Overrides.**
-- Its closing instruction to "tell the user to clear context and run `/personal:shipit`" does **not**
-  apply — you are the thing that runs `/personal:shipit`, immediately, in this same context.
-- Its "Do not invoke `/personal:shipit`" line is likewise overridden here. It exists to keep
-  `implementit` single-purpose when run standalone; `/personal:doit` is the composed pipeline.
-- Everything else stands unchanged — in particular the pre-ship `/personal:code-review` pass and its
+- Its closing instruction to "tell the user to clear context and run `/shipit`" does **not**
+  apply — you are the thing that runs `/shipit`, immediately, in this same context.
+- Its "Do not invoke `/shipit`" line is likewise overridden here. It exists to keep
+  `implementit` single-purpose when run standalone; `/doit` is the composed pipeline.
+- Everything else stands unchanged — in particular the pre-ship `/code-review` pass and its
   severity scoping (ADR 0006) are **mandatory** and must not be skipped or trimmed for speed.
 
 **Outcomes.**
 - Emitted `STATUS: NO_PLAN` → stop the whole run. Report which sources were checked, tell the user to
-  run `/personal:planit {TICKET_ID}`, and emit `STATUS: NO_PLAN` as your very last line.
+  run `/planit {TICKET_ID}`, and emit `STATUS: NO_PLAN` as your very last line.
 - Did not reach `STATUS: IMPLEMENTED` for any other reason (error, ambiguity, stopped early) → stop.
   Report what happened and emit `STATUS: FAILED`.
 - Reached `STATUS: IMPLEMENTED` → continue to phase 2. **Do not** echo the phase's `STATUS:` sentinel
@@ -64,7 +65,7 @@ Carry forward, without re-deriving them later: the **branch name**, the resolved
 
 ## Step 2 — Phase 2: ship
 
-Invoke `personal:shipit` via the Skill tool for `{TICKET_ID}`, threading the same `--base <branch>`
+Invoke `shipit` via the Skill tool for `{TICKET_ID}`, threading the same `--base <branch>`
 if it was supplied.
 
 **Overrides.**
@@ -73,8 +74,8 @@ if it was supplied.
   for it.
 - Its Step 5 base resolution is already answered — reuse the base carried forward from phase 1.
   Only run the `release/*` discovery in Step 5 if phase 1 somehow left the base unresolved.
-- Its closing "tell the user to clear context and run `/personal:mergeit`" does **not** apply.
-- Do **not** run `/personal:reviewit` — the post-ship review remains manual and opt-in (ADR 0005),
+- Its closing "tell the user to clear context and run `/mergeit`" does **not** apply.
+- Do **not** run `/reviewit` — the post-ship review remains manual and opt-in (ADR 0005),
   same as under the loop. If a PR warrants it, the user runs it by hand after this command finishes.
 
 **Outcomes.**
@@ -84,7 +85,7 @@ if it was supplied.
 
 ## Step 3 — Phase 3: merge
 
-Invoke `personal:mergeit` via the Skill tool for `{TICKET_ID}`.
+Invoke `mergeit` via the Skill tool for `{TICKET_ID}`.
 
 **Overrides.**
 - Its Step 1 PR resolution is already answered — use the PR number and base captured in phase 2.
@@ -109,7 +110,7 @@ Print one compact block — no phase-by-phase retelling, the user watched it hap
 Branch:  <branch name>  (base: <base>)
 PR:      <PR URL>  (<merged | open>)
 Merge:   <commit sha>, <squash|merge> into <base>   # omit when not merged
-Next:    /clear, then /personal:doit <next ticket>
+Next:    /clear, then /doit <next ticket>
 ```
 
 If the pre-ship review left any judgement-call smells unfixed (ADR 0006), list them here in one
@@ -132,7 +133,7 @@ Then, as the **very last line of your response**, emit exactly one run-level sen
 
 | Flag | Effect |
 |---|---|
-| `--base <branch>` | Force the branch/PR base. Threaded to both `/personal:implementit` and `/personal:shipit`. Without it, phase 1 resolves the base itself (`loop_base:` hint → current integration branch → repo default). |
+| `--base <branch>` | Force the branch/PR base. Threaded to both `/implementit` and `/shipit`. Without it, phase 1 resolves the base itself (`loop_base:` hint → current integration branch → repo default). |
 | `--no-merge` | Stop after the PR is opened. Mirrors `loop.py`'s `--merge` being opt-in — use it on repos where PRs need team approval. |
 
 ## Token discipline
