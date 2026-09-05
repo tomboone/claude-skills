@@ -1,5 +1,6 @@
 ---
-description: "Respond to /personal:reviewit findings: fix what is valid, push back on what is not, and post the disposition"
+name: addressit
+description: "Respond to /reviewit findings: fix what is valid, push back on what is not, and post the disposition"
 argument-hint: "{TICKET_ID}"
 ---
 
@@ -33,7 +34,7 @@ If checkout fails, stop and emit `STATUS: BLOCKED` as the very last line.
 
 ## Step 3 — Identify the findings to address
 
-Take the **most recent** `## Code Review` comment posted by `/personal:reviewit` as the set of findings. Also read any prior `## Review Response` comments and human replies in the thread so you do not re-litigate items already resolved or already disputed in an earlier round.
+Take the **most recent** `## Code Review` comment posted by `/reviewit` as the set of findings. Also read any prior `## Review Response` comments and human replies in the thread so you do not re-litigate items already resolved or already disputed in an earlier round.
 
 If there is no `## Code Review` comment at all, there is nothing to address — stop and emit `STATUS: BLOCKED` as the very last line (review hasn't run yet).
 
@@ -90,4 +91,4 @@ As the **very last line of your response**, emit exactly one:
 - `STATUS: PUSHED_BACK` — you made no code changes and disputed all findings, with reasoning posted.
 - `STATUS: BLOCKED` — you could not operate (no PR, no `## Code Review` comment, or checkout failed).
 
-Before that line, tell the user (one line) to clear context and run `/personal:reviewit {TICKET_ID}` again if ADDRESSED, or that the review is at an impasse needing their input if PUSHED_BACK.
+Before that line, tell the user (one line) to clear context and run `/reviewit {TICKET_ID}` again if ADDRESSED, or that the review is at an impasse needing their input if PUSHED_BACK.

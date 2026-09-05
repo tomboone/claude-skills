@@ -6,7 +6,7 @@
 
 **Path:** `<DOCS_DIR>/context/<TICKET_ID>-review-context.md`
 
-`DOCS_DIR` resolves exactly as in `/personal:implementit`:
+`DOCS_DIR` resolves exactly as in `/implementit`:
 1. `specs_dir` override in any loaded `CLAUDE.md`, else
 2. umbrella layout → `<umbrella>/docs`, else
 3. single-repo layout → `<repo-root>/.claude/docs`.

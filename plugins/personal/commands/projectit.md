@@ -1,4 +1,5 @@
 ---
+name: projectit
 description: "Scaffold a Linear project: brainstorm it, break it into milestones, stories, and work tickets, and create them in Linear"
 argument-hint: "[--dry-run] [\"high-level project idea\"]"
 ---
@@ -9,10 +10,10 @@ argument-hint: "[--dry-run] [\"high-level project idea\"]"
 
 - **Dry-run:** if `--dry-run` is passed, make NO `save_*`/`create_*` Linear calls. Instead print each Linear write you would make. Every phase honors this — its write step prints instead of executing when dry-run is active.
 - **Never** set issue `status` — the GitHub↔Linear connector owns it.
-- **Labels:** work tickets are created with `loop-ready` and `repo:<name>` (see Phase 3) so they're immediately eligible for `loop.py` once their blockers are `Done` — no mandatory `/personal:planit` pass first. Deselectable per-ticket at the Phase-3 gate. Stories get no labels.
+- **Labels:** work tickets are created with `loop-ready` and `repo:<name>` (see Phase 3) so they're immediately eligible for `loop.py` once their blockers are `Done` — no mandatory `/planit` pass first. Deselectable per-ticket at the Phase-3 gate. Stories get no labels.
 - Create nothing in Linear until after the Phase 3 gate.
 - **Per-ticket planning stays just-in-time:** tickets created here are `loop-ready` immediately;
-  a per-ticket spec is authored with `/personal:planit` later, only when the project-wide spec
+  a per-ticket spec is authored with `/planit` later, only when the project-wide spec
   turns out not to cover a given ticket well enough.
 
 ## Phase 0 — Resolve the Linear target  ■ gate
@@ -29,7 +30,7 @@ argument-hint: "[--dry-run] [\"high-level project idea\"]"
    to the Phase-3 batch. Offer to write `linear_initiative`/`linear_team` back into the repo's
    `CLAUDE.md` if they were not already set.
 7. **Repo name (for the `repo:<name>` label every ticket gets in Phase 3):** resolve the name of the
-   repo `/personal:projectit` is being run in — a `linear_repo:` hint in `CLAUDE.md`; else the
+   repo `/projectit` is being run in — a `linear_repo:` hint in `CLAUDE.md`; else the
    basename of `git remote get-url origin` (`.git` stripped). This must match what `loop.py` derives
    for itself (`resolve_repo_label`), since that's the label it filters tickets on. Record it as
    `REPO_NAME`.
@@ -42,18 +43,18 @@ argument-hint: "[--dry-run] [\"high-level project idea\"]"
 
 ## Phase 1 — Project description  ■ gate
 
-Run a `/personal:grilling` session, using `/personal:domain-modeling` alongside it, framed on the idea + initiative
+Run a `/grilling` session, using `/domain-modeling` alongside it, framed on the idea + initiative
 context to produce a thorough project description (purpose, scope, goals) — updating `CONTEXT.md`
 and any ADRs inline as decisions crystallize. **■ Gate:** user approves.
 
-**Ask one question at a time.** Every question goes out as its own `AskUserQuestion` call — one entry in `questions`, answered before the next is asked, never a batch. Give each one 2–4 concrete options with your recommendation first, labelled `(Recommended)`, so the user can answer with a single keystroke; fall back to prose only when the answers genuinely can't be enumerated. (Full protocol: `/personal:grilling`.)
+**Ask one question at a time.** Every question goes out as its own `AskUserQuestion` call — one entry in `questions`, answered before the next is asked, never a batch. Give each one 2–4 concrete options with your recommendation first, labelled `(Recommended)`, so the user can answer with a single keystroke; fall back to prose only when the answers genuinely can't be enumerated.
 
-Once approved, resolve `DOCS_DIR` for the repo `/personal:projectit` is being run in (per
+Once approved, resolve `DOCS_DIR` for the repo `/projectit` is being run in (per
 `spec-and-plan-convention.md`), then write a **project-wide spec** to
 `DOCS_DIR/specs/<project-slug>-project-spec.md` (`<project-slug>` = hyphenated project name;
 create the folder if missing) capturing the full grilling session's outcome — not just the short
 paragraph destined for Linear's project description below. This is what lets
-`/personal:planit`'s sufficiency check pass immediately for every ticket in the project, without a
+`/planit`'s sufficiency check pass immediately for every ticket in the project, without a
 fresh per-ticket interview, when the project-shaping pass was thorough enough to cover it. Record
 its path as `PROJECT_SPEC`.
 
@@ -76,9 +77,9 @@ one work ticket = one `/implementit` run = one PR; stories hold user-facing acce
 tickets are the implementable slices. Note inter-ticket `blockedBy` dependencies (B builds on A).
 
 **Target repo (multi-repo projects only):** assign each work ticket exactly one repo name from
-`REPOS` (or `REPO_NAME` if it belongs to the repo `/personal:projectit` is running in) and record it
+`REPOS` (or `REPO_NAME` if it belongs to the repo `/projectit` is running in) and record it
 as a plain `**Target repo:** <name>` line in the ticket description — informational, so you know
-where to run `/personal:planit`. **Never silently guess** — ask when a ticket's repo is ambiguous.
+where to run `/planit`. **Never silently guess** — ask when a ticket's repo is ambiguous.
 Show each ticket's assigned repo in the breakdown so the user can edit it at the gate. Stories get
 no repo assignment. Single-repo projects: omit target-repo lines entirely (every ticket still gets
 `REPO_NAME` for its `repo:<name>` label below).
@@ -86,7 +87,7 @@ no repo assignment. Single-repo projects: omit target-repo lines entirely (every
 **Loop-ready + repo labels:** every work ticket defaults to the labels `loop-ready` and `repo:<name>`
 — `<name>` being the ticket's assigned target repo (multi-repo) or `REPO_NAME` (single-repo) — so
 it's immediately eligible for `loop.py` once its `blockedBy` blockers are `Done`, with no mandatory
-`/personal:planit` pass first (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`).
+`/planit` pass first (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`).
 Show each ticket's labels in the breakdown so the user can deselect `loop-ready` for any ticket they'd
 rather plan or review manually before it's loop-eligible. Stories get no labels.
 
@@ -116,5 +117,5 @@ Work tickets: <count> (<N> loop-ready)
 Next: loop-ready tickets can go straight through plugins/personal/scripts/loop.py — it
 will implement each directly off the project-wide spec once its blockers are Done. For
 any ticket you deselected, or one that needs deeper per-ticket planning, run
-/personal:planit {TICKET} first, then /personal:implementit {TICKET}.
+/planit {TICKET} first, then /implementit {TICKET}.
 ```
