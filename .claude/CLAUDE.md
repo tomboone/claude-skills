@@ -1,7 +1,7 @@
 # claude-skills
 
 Personal Claude Code configuration repo — see `README.md` at the repo root for the full picture
-(what the `personal` plugin does, the command pipeline, `loop.py`, on-disk conventions).
+(what the `personal` plugin does, the command pipeline, on-disk conventions).
 
 ## How this repo tracks its own work
 

@@ -1,5 +1,7 @@
 # `/personal:doit` is the attended single-ticket pipeline, alongside the loop
 
+> **Note:** superseded in part by [ADR 0008](0008-retire-the-headless-loop.md). The loop this ADR kept alongside `/doit` has since been retired.
+
 `/personal:doit {TICKET_ID}` runs `implementit → shipit → mergeit` inline in one interactive Claude
 Code session, taking a single unblocked ticket from planned to merged. It is **not** a replacement
 for `plugins/personal/scripts/loop.py` and does not change it — both drive the same state machine,
