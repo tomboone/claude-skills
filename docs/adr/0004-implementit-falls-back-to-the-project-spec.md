@@ -1,5 +1,7 @@
 # implementit falls back to the project-wide spec, and projectit marks tickets loop-ready, so the loop doesn't require a planit pass per ticket
 
+> **Note:** the `loop-ready` half of this decision was reversed by [ADR 0008](0008-retire-the-headless-loop.md), which retired `loop.py`; `/projectit` now applies only `repo:<name>`. The `implementit` fallback to the project-wide spec still stands — `/doit` relies on it the same way — except on tickets labelled `planit`, where [ADR 0009](0009-projectit-flags-spec-gaps-for-planit.md) turns it off until `/planit` has run.
+
 [[0003-planit-keeps-its-per-ticket-gate]] kept `planit`'s per-ticket sufficiency gate as a safety net even when a strong project-shaping pass usually makes it a fast pass-through. In practice this still forced a `planit` run before `implementit` could find *anything* to work from — `implementit` only ever looked for a **per-ticket** plan or spec file (named with the ticket ID), and `/projectit`'s project-wide spec has no ticket ID in its filename, so `implementit` couldn't see it. That defeated the point of a good project-wide spec: the loop still couldn't run end-to-end without a `planit` pass on every ticket first.
 
 Two changes close that gap:

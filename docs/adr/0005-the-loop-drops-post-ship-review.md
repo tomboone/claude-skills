@@ -2,6 +2,8 @@
 
 **Supersedes the loop-facing half of [ADR 0002](0002-two-pass-code-review-is-intentional.md).**
 
+> **Note:** `loop.py` was later retired ([ADR 0008](0008-retire-the-headless-loop.md)). This decision carries over to `/doit`, which also runs `implementit → shipit → mergeit` with no post-ship review.
+
 The loop used to run `implementit → shipit → (reviewit ↔ addressit)* → mergeit`, with the review ↔ address alternation bounded by `--max-rounds`. It now runs `implementit → shipit → mergeit`.
 
 ## Why

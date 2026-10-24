@@ -24,7 +24,7 @@ gh pr diff PR_NUMBER              # current full diff
 gh pr view PR_NUMBER --comments   # top-level thread: `## Code Review` + `## Review Response` blocks and human replies
 ```
 
-The inline-comments API (`/pulls/N/comments`) is intentionally omitted: the loop posts only top-level comments, so it returns data the loop never creates and only inflates context (and cache-write cost) every round. Add it back only if a human is leaving inline review comments you need to honor.
+The inline-comments API (`/pulls/N/comments`) is intentionally omitted: the pipeline posts only top-level comments, so it returns data the pipeline never creates and only inflates context (and cache-write cost) every round. Add it back only if a human is leaving inline review comments you need to honor.
 
 Check out the PR branch locally so you can make changes:
 ```bash

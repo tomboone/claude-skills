@@ -14,10 +14,6 @@ was doing the right thing.
   workspace, installed and authenticated. A GitHub MCP is configured per-project and is absent from
   most of them. A command that reaches for one works in the repo where it happens to be configured
   and stalls in every other.
-- **The failure is worst where it is least visible.** Under `plugins/personal/scripts/loop.py` the
-  steps run headlessly with `--permission-mode bypassPermissions`. A missing MCP tool there does not
-  prompt; it produces a step that never emits its `STATUS:` sentinel, which the loop records as
-  `FAILED` with no useful diagnostic.
 - **`gh --json`/`--jq` output is deterministic and greppable.** The commands parse it directly
   (`gh pr view PR_NUMBER --json baseRefOid --jq '.baseRefOid'`). MCP tool output shapes are not
   guaranteed stable across server versions.

@@ -30,7 +30,7 @@ Fetch the prior review conversation so the reviewer knows what was already raise
 gh pr view PR_NUMBER --comments   # top-level thread: prior `## Code Review` + `## Review Response` blocks and human replies
 ```
 
-This single fetch is deliberate. The loop posts only **top-level** comments — `## Code Review` from this command, `## Review Response` from `/addressit` — so the inline-comments (`/pulls/N/comments`) and formal-reviews (`/pulls/N/reviews`) APIs return data the loop never creates; fetching them only inflates context and cache-write cost every round. Add them back only if a human is leaving inline review comments you need to honor.
+This single fetch is deliberate. The pipeline posts only **top-level** comments — `## Code Review` from this command, `## Review Response` from `/addressit` — so the inline-comments (`/pulls/N/comments`) and formal-reviews (`/pulls/N/reviews`) APIs return data the pipeline never creates; fetching them only inflates context and cache-write cost every round. Add them back only if a human is leaving inline review comments you need to honor.
 
 From this thread, build `PRIOR_REVIEW_CONTEXT`: a short digest scoped to the **most recent** `## Code Review` block this command posted plus any `## Review Response` and human replies that follow it — do not walk the entire history. For each prior finding, note whether the thread shows it was **fixed**, **still open**, or **intentionally accepted/deferred** by the user. If there are no prior `## Code Review` comments, leave `PRIOR_REVIEW_CONTEXT` empty.
 

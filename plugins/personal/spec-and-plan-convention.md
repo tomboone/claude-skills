@@ -12,7 +12,7 @@ The single rule for where design specs and implementation plans live. `/planit`,
    - Show the proposal; the user confirms, edits the value, or declines.
    - **On confirm:** write `specs_dir: <value>` into the repo's `CLAUDE.md` (prefer an existing `.claude/CLAUDE.md`, else `CLAUDE.md`; create `.claude/CLAUDE.md` if neither exists) and ensure `<DOCS_DIR>/{specs,plans}` exist. `DOCS_DIR = <repo>/<value>`.
    - **On decline:** fall through to auto-resolution (next step) for this run.
-   **Read-only commands (`/implementit`, `/reviewit`) and the loop never prompt** — they skip this step, auto-resolve, and report if nothing is found. `/projectit` runs this offer **per assigned repo** via `docs_dir_for(repo)`.
+   **Read-only commands (`/implementit`, `/reviewit`) never prompt** — they skip this step, auto-resolve, and report if nothing is found. `/projectit` runs this offer **per assigned repo** via `docs_dir_for(repo)`.
 
 3. **Auto-resolve by project shape.** Find the repo root with `git rev-parse --show-toplevel`, then inspect its parent directory:
    - **Umbrella layout** — the repo root's parent is **not** a git repo and contains sibling code repos (typically a backend and a frontend). The umbrella (the non-git parent) is the project root. → `DOCS_DIR = <umbrella>/docs`, a sibling of the code repos.

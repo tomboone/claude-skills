@@ -22,7 +22,7 @@ Look for a plan file whose name contains `{TICKET_ID}` (case-insensitive) in **b
 - `DOCS_DIR/plans/` — the current spec-storage convention.
 - `DOCS_DIR/superpowers/plans/` — the retired layout (older tickets only).
 
-Work the sources below **in order** and stop at the first that resolves. `STATUS: NO_PLAN` is correct only after *all four* have been tried — it means "no design context exists anywhere," not "the filename lookup missed."
+Work the sources below **in order** and stop at the first that resolves. `STATUS: NO_PLAN` is correct only after *all four* have been tried — it means "no design context exists anywhere," not "the filename lookup missed." The one exception is a ticket labelled `planit`, where source 3 is off limits (see below).
 
 **1. A per-ticket file named for the ticket.**
 - If exactly one match is found across both plan layouts, proceed with it.
@@ -31,9 +31,11 @@ Work the sources below **in order** and stop at the first that resolves. `STATUS
 
 **2. A pointer in the ticket's own description.** Fetch `{TICKET_ID}` via the Linear MCP and read **its own description** for a line naming a spec or plan — `/projectit` writes one on every ticket it creates, in the form ``Spec: `docs/specs/NEU-638-*.md` §5`` (a `Plan:` line is equally valid). **Resolve globs**: `NEU-638-*.md` is a real pointer, not a literal filename — expand it against `DOCS_DIR` and use the match. A section marker (`§5`) narrows *what to read within the file*; it does not make the pointer unusable. This is the most direct signal available and is checked before any project-level lookup.
 
-**3. The project-wide spec.** Read the description of **the Linear project the ticket belongs to** — the `project` / `projectId` field on the issue. This is *not* the ticket's `parentId`: a ticket commonly has both a parent **issue** (a user story, e.g. `NEU-727`) and a Linear **project**, and only the project carries the pointer. Look for a `**Project spec:**` line (written by `/projectit` Phase 1); a `**Project plan:**` line is an equally valid fallback. If present, resolve and read that file — this is the common case for a ticket that never went through `/planit`, relying instead on `/projectit`'s project-wide spec covering it well enough. Note: this fallback trusts the project spec's coverage of this specific ticket without the sufficiency judgment `/planit` would normally make (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`) — if implementation goes sideways because the spec doesn't actually cover this ticket, run `/planit {TICKET_ID}` for a proper per-ticket pass instead.
+**3. The project-wide spec.** **Skip this source entirely if the ticket carries the `planit` label** (visible on the issue fetched in source 2) — `/projectit` applies it when it judged that the project-wide spec doesn't cover this ticket, and `/planit` removes it once the ticket has been checked or given its own spec (`docs/adr/0009-projectit-flags-spec-gaps-for-planit.md`). The same goes for a source-2 pointer that names the project-wide spec file rather than a per-ticket one. Go straight to source 4.
 
-**4. Nothing found.** Only if all three above come back empty, stop and tell the user to run `/planit {TICKET_ID}` first. Say **which** sources you checked and what you searched for. Then, as the **very last line of your response**, emit `STATUS: NO_PLAN` so the headless loop orchestrator records this ticket as *not implemented* instead of marching on to `/shipit`.
+Otherwise, read the description of **the Linear project the ticket belongs to** — the `project` / `projectId` field on the issue. This is *not* the ticket's `parentId`: a ticket commonly has both a parent **issue** (a user story, e.g. `NEU-727`) and a Linear **project**, and only the project carries the pointer. Look for a `**Project spec:**` line (written by `/projectit` Phase 1); a `**Project plan:**` line is an equally valid fallback. If present, resolve and read that file — this is the common case for a ticket that never went through `/planit`, relying instead on `/projectit`'s project-wide spec covering it well enough. Note: this fallback trusts the project spec's coverage of this specific ticket without the sufficiency judgment `/planit` would normally make (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`) — if implementation goes sideways because the spec doesn't actually cover this ticket, run `/planit {TICKET_ID}` for a proper per-ticket pass instead.
+
+**4. Nothing found.** Only if all three above come back empty, stop and tell the user to run `/planit {TICKET_ID}` first. Say **which** sources you checked and what you searched for — and if the ticket is labelled `planit`, say that this is why the project-wide spec wasn't used. Then, as the **very last line of your response**, emit `STATUS: NO_PLAN` so `/doit` records this ticket as *not implemented* instead of marching on to `/shipit`.
 
 ## Step 3 — Load the referenced spec (if the plan references one)
 
@@ -49,10 +51,21 @@ step is a no-op. Backwards-compatible.
 
 ## Step 4 — Create the work branch
 
+**First, check for a no-code ticket.** If the design context resolved in Steps 2–3 calls for **no
+change to this repository at all**, the ticket is entirely manual work: configuring something in an
+external console, running an existing runbook or script, a one-off data fix. In that case don't
+create a branch and don't implement anything. Say in one line why there is nothing to commit, then
+give the manual-steps walkthrough defined in `plugins/personal/manual-steps-convention.md`. That
+walkthrough *is* the ticket's implementation, so it must be complete and exact. (**Exception —
+running under `/doit`:** skip the walkthrough here; `/doit` gives it in its Step 4.) Then, as the
+**very last line of your response**, emit `STATUS: NO_CODE`. If the ticket needs *any* repository
+change — including writing a runbook or script that someone then executes — this exception doesn't
+apply. Implement the repository part as normal; the execution becomes a manual step after merge.
+
 Derive a branch name from the ticket ID and the plan/spec title: `feat/{TICKET_ID}-short-description` (or `fix/` if the ticket is a bug fix). Use the ticket ID exactly as given — don't assume a project prefix.
 
 **Branch from the resolved base.** Determine `BASE`:
-1. If invoked with `--base <branch>` (the loop threads this), use it.
+1. If invoked with `--base <branch>` (`/doit` threads this), use it.
 2. Otherwise resolve locally: a `loop_base:` line in the repo `CLAUDE.md`; else the current
    checked-out branch when it is a real integration branch (not detached, not a `feat/*`/`fix/*`
    work branch); else the repo default branch (`git symbolic-ref --short refs/remotes/origin/HEAD`,
@@ -64,7 +77,7 @@ git fetch origin "$BASE"
 git checkout -b feat/{TICKET_ID}-short-description "origin/$BASE"
 ```
 (Use the `fix/` prefix for a bug-fix ticket, per the branch-name rule above.) Do **not** prompt for
-the base in headless mode — the loop always supplies `--base`.
+the base — the resolution order above always ends in one.
 
 ## Step 5 — Implement the plan
 
@@ -78,8 +91,8 @@ is installed from the `mattpocock/skills` marketplace (`~/.agents/.skill-lock.js
 (*"Skill implement cannot be used with Skill tool due to disable-model-invocation"*), so only a
 human typing `/implement` can reach it. This is a property of that one skill, not of commands in
 general — every command in this plugin **is** Skill-invocable. Delegating to `/implement`
-stalls the entire `implementit → shipit → mergeit` chain — headless under `loop.py` and attended
-under `/doit` alike — at phase 1, with a branch created and nothing implemented. Its body
+stalls the entire `implementit → shipit → mergeit` chain under `/doit` at phase 1, with a branch
+created and nothing implemented. Its body
 was four lines of generic guidance, reproduced as the sequence below, so inlining costs nothing.
 
 Execute in this order:
@@ -101,8 +114,8 @@ Execute in this order:
    matching against documented rules and a fixed smell list — rubric work, not open-ended
    judgement. Keep the **Spec** sub-agent on the **session's own model**, because deciding whether
    an implementation honours the intent of a spec is exactly the judgement Standards does not
-   require. This matters most here, where the session runs on Opus at high effort and this pass is
-   the loop's only code review (`docs/adr/0005-the-loop-drops-post-ship-review.md`) — without the
+   require. This matters most here, where the session is typically on Opus and this pass is
+   the pipeline's only code review (`docs/adr/0005-the-loop-drops-post-ship-review.md`) — without the
    routing, the Standards axis is Opus-priced for checklist work.
 4. **Commit** to the current branch.
 
@@ -120,13 +133,13 @@ Apply the findings **scoped by severity**:
 threshold — because it was written for a human to read and exercise judgement over. Blind-applying
 everything means applying a dozen judgement-call refactorings (rename, extract a type, replace with
 polymorphism, split the module) that the skill deliberately declines to rank. That is both a quality
-risk and the loop's single largest token cost — see
+risk and the pipeline's single largest token cost — see
 `docs/adr/0006-implementit-applies-review-findings-by-severity.md`.
 
-**This review pass is not optional and must not be skipped.** It is the only code review the loop performs: the loop runs `implementit → shipit → mergeit` and no longer runs a post-ship `/reviewit` pass (see `docs/adr/0005-the-loop-drops-post-ship-review.md`). Run `/reviewit {TICKET_ID}` by hand afterwards if a ticket warrants a second, judgment-preserving opinion on the open PR.
+**This review pass is not optional and must not be skipped.** It is the only code review the pipeline performs: `/doit` runs `implementit → shipit → mergeit` and does not run a post-ship `/reviewit` pass (see `docs/adr/0005-the-loop-drops-post-ship-review.md`). Run `/reviewit {TICKET_ID}` by hand afterwards if a ticket warrants a second, judgment-preserving opinion on the open PR.
 
 Do not invoke `/shipit`. When the review-and-fix pass finishes, tell the user to clear context and run `/shipit {TICKET_ID}` when ready.
 
 (**Exception — running under `/doit`:** that command composes this one with `/shipit` and `/mergeit` in a single session, and its Overrides replace this hand-off. Continue straight into its next phase instead of stopping.)
 
-**Completion signal.** Only after the review-and-fix pass in step 3 has actually completed, emit — as the **very last line of your response** — `STATUS: IMPLEMENTED`. This is how the headless loop orchestrator (`loop.py`) confirms the plan was executed; if you stopped early for any reason (no plan, ambiguous input, an error), do **not** emit it.
+**Completion signal.** Only after the review-and-fix pass in step 3 has actually completed, emit — as the **very last line of your response** — `STATUS: IMPLEMENTED`. This is how `/doit` confirms the plan was executed before moving on to `/shipit`; if you stopped early for any reason (no plan, ambiguous input, an error), do **not** emit it.

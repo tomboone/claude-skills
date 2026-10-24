@@ -7,10 +7,8 @@ argument-hint: "{TICKET_ID} [--base <branch>] [--no-merge]"
 **CRITICAL: Follow every step in order. Do not skip or reorder steps. Do not jump ahead to
 implementation.**
 
-This is the **attended** counterpart to `plugins/personal/scripts/loop.py`: the same
-`implementit → shipit → mergeit` state machine, run inline in one Claude Code session on one ticket,
-instead of headlessly across a wave via `claude -p`. Run it, let it finish, `/clear` (or `/compact`),
-then run it again on the next ticket. See `docs/adr/0007-doit-is-the-attended-single-ticket-pipeline.md`.
+This runs the `implementit → shipit → mergeit` state machine inline, in one Claude Code session, on
+one ticket. Run it, let it finish, `/clear` (or `/compact`), then run it again on the next ticket. See `docs/adr/0007-doit-is-the-attended-single-ticket-pipeline.md`.
 
 **Execute the phases in this session.** Do not spawn sub-agents for them, do not shell out to
 `claude -p`, and do not re-launch the pipeline any other way. Running all three phases in one context
@@ -31,10 +29,6 @@ Fetch `{TICKET_ID}` via the Linear MCP. Then:
 2. **Blockers are done.** Check the ticket's `blockedBy` relations. If any blocking issue is not in a
    `Done`/completed state, stop — do **not** start implementing. Name each unfinished blocker (ID,
    title, current status) and emit `STATUS: BLOCKED` as the very last line.
-3. **Do not require the `loop-ready` label.** That label is `loop.py`'s triage filter — it answers
-   "may an unattended wave pick this up?", which is not the question here, because you picked the
-   ticket by hand. A hand-created ticket with no label is a perfectly valid `/doit` target.
-   Do not check for it and do not warn about its absence.
 
 Say in one line what you're about to do (ticket ID, title, and whether merging is in scope), then go
 straight into phase 1 — no confirmation gate.
@@ -53,6 +47,9 @@ through if `/doit` was invoked with it.
   severity scoping (ADR 0006) are **mandatory** and must not be skipped or trimmed for speed.
 
 **Outcomes.**
+- Emitted `STATUS: NO_CODE` → the ticket needs no repository change. Skip phases 2 and 3 (there is
+  nothing to ship or merge) and go straight to Step 4, where the manual-steps walkthrough is the
+  whole deliverable.
 - Emitted `STATUS: NO_PLAN` → stop the whole run. Report which sources were checked, tell the user to
   run `/planit {TICKET_ID}`, and emit `STATUS: NO_PLAN` as your very last line.
 - Did not reach `STATUS: IMPLEMENTED` for any other reason (error, ambiguity, stopped early) → stop.
@@ -75,8 +72,8 @@ if it was supplied.
 - Its Step 5 base resolution is already answered — reuse the base carried forward from phase 1.
   Only run the `release/*` discovery in Step 5 if phase 1 somehow left the base unresolved.
 - Its closing "tell the user to clear context and run `/mergeit`" does **not** apply.
-- Do **not** run `/reviewit` — the post-ship review remains manual and opt-in (ADR 0005),
-  same as under the loop. If a PR warrants it, the user runs it by hand after this command finishes.
+- Do **not** run `/reviewit` — the post-ship review remains manual and opt-in (ADR 0005).
+  If a PR warrants it, the user runs it by hand after this command finishes.
 
 **Outcomes.**
 - No PR created → stop, report why, emit `STATUS: FAILED`.
@@ -94,6 +91,7 @@ Invoke `mergeit` via the Skill tool for `{TICKET_ID}`.
   blocks; a missing `## Code Review` comment does not.
 - Its CI handling (Steps 3a–3c) applies **in full, unchanged**. Do not shorten the waits and do not
   merge past an unregistered or failing check. CI is the merge gate.
+- Its Step 6 manual-steps walkthrough is deferred to this command's Step 4, so it appears once.
 
 **Outcomes.**
 - `STATUS: MERGE_BLOCKED` → stop. Report the blocking reason (failed check + log URL, no check
@@ -107,16 +105,33 @@ Print one compact block — no phase-by-phase retelling, the user watched it hap
 
 ```
 {TICKET_ID} — <ticket title>
-Branch:  <branch name>  (base: <base>)
-PR:      <PR URL>  (<merged | open>)
+Branch:  <branch name>  (base: <base>)            # omit for a no-code ticket
+PR:      <PR URL>  (<merged | open>)              # "none — no-code ticket" when NO_CODE
 Merge:   <commit sha>, <squash|merge> into <base>   # omit when not merged
-Next:    /clear, then /doit <next ticket>
+Next:    finish the manual steps below, then /clear and /doit <next ticket>
 ```
 
 If the pre-ship review left any judgement-call smells unfixed (ADR 0006), list them here in one
 line each — this is the one place the user sees them, since the PR is already merged.
 
-Do not touch the Linear ticket's status; the GitHub↔Linear connector owns that.
+**Then give the manual-steps walkthrough** defined in `plugins/personal/manual-steps-convention.md`
+whenever the run ended **merged**, **PR open (`--no-merge`)**, or **no-code**. This is mandatory, not
+a courtesy: it is how the user learns what still stands between this run and a finished ticket,
+without having to ask. Build it from the ticket, the spec and the diff already in context. Don't
+re-fetch what earlier phases read.
+- **Merged:** everything the merged code does not do by itself — deploy (if merging doesn't deploy),
+  migrations, config and secrets, external-service setup, executing any runbook or script the ticket
+  delivered.
+- **`--no-merge`:** getting the PR reviewed and merged comes first (PR URL, then `/mergeit {TICKET_ID}`),
+  then everything that will remain after it merges.
+- **No-code:** the ticket's entire implementation, written so it can be followed start to finish —
+  every command exact, every UI step click by click, each with its own check that it worked.
+
+Write `No other steps — <why>` only when the evidence shows nothing else is left. Either way the walkthrough ends with the user moving the ticket to Done; the merge only takes it to **Merged**. Skip the walkthrough for runs that
+stopped as `BLOCKED`, `NO_PLAN`, `MERGE_BLOCKED` or `FAILED`; their report already says what to
+do next.
+
+Do not touch the Linear ticket's status. The GitHub↔Linear connector moves it as far as **Merged**, and **Done** is the user's to set once the manual steps are finished (the walkthrough's last step tells them to).
 
 Then, as the **very last line of your response**, emit exactly one run-level sentinel:
 
@@ -124,6 +139,7 @@ Then, as the **very last line of your response**, emit exactly one run-level sen
 |---|---|
 | Merged | `STATUS: MERGED` |
 | PR open, `--no-merge` was passed | `STATUS: READY_FOR_REVIEW` |
+| No repository change needed; walkthrough given | `STATUS: NO_CODE` |
 | Merge blocked (CI, or "Needs changes") | `STATUS: MERGE_BLOCKED` |
 | No design context found | `STATUS: NO_PLAN` |
 | Unmet blocker, or ticket not found | `STATUS: BLOCKED` |
@@ -134,7 +150,7 @@ Then, as the **very last line of your response**, emit exactly one run-level sen
 | Flag | Effect |
 |---|---|
 | `--base <branch>` | Force the branch/PR base. Threaded to both `/implementit` and `/shipit`. Without it, phase 1 resolves the base itself (`loop_base:` hint → current integration branch → repo default). |
-| `--no-merge` | Stop after the PR is opened. Mirrors `loop.py`'s `--merge` being opt-in — use it on repos where PRs need team approval. |
+| `--no-merge` | Stop after the PR is opened. Use it on repos where PRs need team approval. |
 
 ## Token discipline
 

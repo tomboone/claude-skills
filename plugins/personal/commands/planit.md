@@ -45,7 +45,7 @@ Read whichever exists (both, if both exist) fully. Evaluate whether the two toge
 - Key technical decisions and constraints
 - Any known unknowns explicitly called out as out of scope or deferred
 
-**If sufficient:** Tell the user it looks implementation-ready — name which source(s) covered it (per-ticket file, project-wide spec, or both) and give a one-paragraph summary. Tell the user to clear context and run `/implementit {TICKET_ID}` when ready. Stop here — do not begin implementation.
+**If sufficient:** Clear the `planit` label (see Step 5). Tell the user it looks implementation-ready — name which source(s) covered it (per-ticket file, project-wide spec, or both) and give a one-paragraph summary. Tell the user to clear context and run `/implementit {TICKET_ID}` when ready. Stop here — do not begin implementation.
 
 **If insufficient (or nothing found at all):** Tell the user what's missing. Then continue to Step 4.
 
@@ -57,4 +57,18 @@ Present the ticket context you gathered in Step 2 — including the parent miles
 
 `/grilling`/`/domain-modeling` sharpen the design and the repo's shared vocabulary — they do not, on their own, produce a per-ticket spec file. Once the session reaches shared understanding, write the spec yourself to `DOCS_DIR/specs/{TICKET_ID}-<slug>.md` (create the folder if missing): what to build and why, acceptance criteria, key technical decisions and constraints, anything explicitly out of scope or deferred. This is the file `/implementit` will look for by ticket ID — no separate step-by-step implementation plan is authored; `/implementit` implements straight from this spec.
 
-When done, tell the user to clear context and run `/implementit {TICKET_ID}` when ready. Stop here.
+When done, clear the `planit` label (Step 5), then tell the user to clear context and run `/implementit {TICKET_ID}` when ready. Stop here.
+
+## Step 5 — Clear the `planit` label
+
+`/projectit` labels a ticket `planit` when its project-wide spec doesn't cover the ticket, and
+`/implementit` refuses to fall back to the project spec while the label is on. Once this command has
+judged the ticket implementation-ready (Step 3) or written its per-ticket spec (Step 4), the label's
+job is done: if the ticket fetched in Step 2 carries it, remove it with
+`save_issue(id={TICKET_ID}, removeLabels=["planit"])`. Leave every other label alone. Skip this step
+if the ticket isn't labelled.
+
+**If Step 3 judged it sufficient on the project-wide spec alone, still clear the label** — that
+judgement is exactly the per-ticket check the label asked for, and `/implementit` will then fall back
+to the project spec as normal. Say so in one line, so the user knows `/projectit`'s flag was
+overruled.

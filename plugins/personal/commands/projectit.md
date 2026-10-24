@@ -10,11 +10,12 @@ argument-hint: "[--dry-run] [\"high-level project idea\"]"
 
 - **Dry-run:** if `--dry-run` is passed, make NO `save_*`/`create_*` Linear calls. Instead print each Linear write you would make. Every phase honors this — its write step prints instead of executing when dry-run is active.
 - **Never** set issue `status` — the GitHub↔Linear connector owns it.
-- **Labels:** work tickets are created with `loop-ready` and `repo:<name>` (see Phase 3) so they're immediately eligible for `loop.py` once their blockers are `Done` — no mandatory `/planit` pass first. Deselectable per-ticket at the Phase-3 gate. Stories get no labels.
+- **Labels:** work tickets are created with a `repo:<name>` label, plus a `planit` label on any ticket the Phase-3 coverage check finds the project-wide spec doesn't cover (see Phase 3). Stories get no labels.
 - Create nothing in Linear until after the Phase 3 gate.
-- **Per-ticket planning stays just-in-time:** tickets created here are `loop-ready` immediately;
-  a per-ticket spec is authored with `/planit` later, only when the project-wide spec
-  turns out not to cover a given ticket well enough.
+- **Per-ticket planning stays just-in-time:** unlabelled tickets created here can go straight to
+  `/doit` or `/implementit` once their blockers are `Done`, implemented off the project-wide spec;
+  a per-ticket spec is authored with `/planit` later — up front for tickets labelled `planit`, and
+  for any other ticket only if the project-wide spec turns out not to cover it well enough.
 
 ## Phase 0 — Resolve the Linear target  ■ gate
 
@@ -31,9 +32,7 @@ argument-hint: "[--dry-run] [\"high-level project idea\"]"
    `CLAUDE.md` if they were not already set.
 7. **Repo name (for the `repo:<name>` label every ticket gets in Phase 3):** resolve the name of the
    repo `/projectit` is being run in — a `linear_repo:` hint in `CLAUDE.md`; else the
-   basename of `git remote get-url origin` (`.git` stripped). This must match what `loop.py` derives
-   for itself (`resolve_repo_label`), since that's the label it filters tickets on. Record it as
-   `REPO_NAME`.
+   basename of `git remote get-url origin` (`.git` stripped). Record it as `REPO_NAME`.
    **Target repos (multi-repo projects only):** if this project's tickets may span more than one repo,
    resolve the set of *additional* repo **names** — most authoritative first: (a) a `linear_repos:`
    list in `CLAUDE.md`; else (b) ask the user to name them. Record the set as `REPOS` (names only —
@@ -84,21 +83,42 @@ Show each ticket's assigned repo in the breakdown so the user can edit it at the
 no repo assignment. Single-repo projects: omit target-repo lines entirely (every ticket still gets
 `REPO_NAME` for its `repo:<name>` label below).
 
-**Loop-ready + repo labels:** every work ticket defaults to the labels `loop-ready` and `repo:<name>`
-— `<name>` being the ticket's assigned target repo (multi-repo) or `REPO_NAME` (single-repo) — so
-it's immediately eligible for `loop.py` once its `blockedBy` blockers are `Done`, with no mandatory
-`/planit` pass first (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`).
-Show each ticket's labels in the breakdown so the user can deselect `loop-ready` for any ticket they'd
-rather plan or review manually before it's loop-eligible. Stories get no labels.
+**Repo label:** every work ticket gets the label `repo:<name>` — `<name>` being the ticket's
+assigned target repo (multi-repo) or `REPO_NAME` (single-repo). Stories get no labels.
+
+**Planit check:** project-shaping is breadth-first, so `PROJECT_SPEC` is not guaranteed to cover every
+ticket in enough depth to implement from. Evaluate each drafted work ticket against `PROJECT_SPEC`
+plus its milestone's **Shared contracts**, using `/planit`'s Step 3 sufficiency bar — for *this
+ticket specifically*, do they state:
+- what to build and why;
+- acceptance criteria or observable outcomes;
+- the key technical decisions and constraints;
+- any known unknowns, explicitly called out as out of scope or deferred?
+
+Flag the ticket `planit` if any of the four is missing, or if the spec defers a decision this ticket
+has to make. Do **not** flag a ticket merely for having `blockedBy` dependencies — whether a blocker
+ships as planned can't be known now, and `/planit` already handles that drift just-in-time if
+someone runs it (ADR 0003). Tickets without the flag implement straight off the project spec with no
+`/planit` pass (see `docs/adr/0004-implementit-falls-back-to-the-project-spec.md`).
+
+Show each ticket's labels in the breakdown, and for every flagged ticket a one-line reason naming
+what's missing (`planit: no acceptance criteria for the retry path`). At the gate the user can add or
+remove the flag on any ticket, or close a gap on the spot — in which case amend `PROJECT_SPEC` with
+the answer and drop the flag. A flagged ticket is one `/implementit` will refuse to implement off the
+project spec alone until `/planit` has run (see `docs/adr/0009-projectit-flags-spec-gaps-for-planit.md`).
 
 **■ Gate:** user reviews/edits the full breakdown. **This is the single gate after which all Linear
 writes happen** — nothing was written in Phases 0–2.
 
 On approval, create top-down in one batch (dry-run prints each call instead):
+0. **`planit` label** (only if at least one ticket is flagged): `list_issue_labels(team=TEAM, name="planit")`.
+   If it's missing, create it with `save_issue_label` (name `planit`, scoped to TEAM, description
+   "Project spec doesn't cover this ticket — run /planit before implementing"). If it exists but is
+   retired, restore it with `restore_issue_label`.
 1. **Project:** append a `**Project spec:** <PROJECT_SPEC path>` line to the held Phase-1 description. If creating new, `save_project(name=<PROJECT_TO_CREATE>, addTeams=[<team>], addInitiatives=[<initiative>], description=<description + Project spec line>)`; if reusing, `save_project(id=PROJECT, description=<description + Project spec line>)`. Record `PROJECT`.
 2. **Milestones:** for each held milestone, `save_milestone(project=PROJECT, name=<name>, description=<goal + Shared contracts section>)`.
 3. **Stories:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, description=<story + acceptance criteria>)`. Record each identifier. **No label.**
-4. **Tickets:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, parentId=<story-id>, labels=<["loop-ready", "repo:<name>"] unless the user deselected loop-ready for this ticket at the gate>, description=<intent; for multi-repo projects prepend a "**Target repo:** <name>" line>)`.
+4. **Tickets:** `save_issue(title, team=TEAM, project=PROJECT, milestone=<name>, parentId=<story-id>, labels=["repo:<name>"] plus "planit" if the ticket is flagged, description=<intent; for multi-repo projects prepend a "**Target repo:** <name>" line>)`.
 5. **Dependencies:** for each "B builds on A", `save_issue(id=B, blockedBy=[A])`.
 
 **Idempotency:** before creating, look up the project (by id/name), milestones (by name), and issues
@@ -112,10 +132,9 @@ Print a summary block:
 Project: <Linear project URL>
 Milestones:   <count>
 User stories: <count>
-Work tickets: <count> (<N> loop-ready)
+Work tickets: <count> (<N> labelled planit)
 
-Next: loop-ready tickets can go straight through plugins/personal/scripts/loop.py — it
-will implement each directly off the project-wide spec once its blockers are Done. For
-any ticket you deselected, or one that needs deeper per-ticket planning, run
-/planit {TICKET} first, then /implementit {TICKET}.
+Next: unlabelled tickets can go straight through /doit {TICKET} — it implements directly off
+the project-wide spec once the ticket's blockers are Done. Tickets labelled planit need
+/planit {TICKET} first; /implementit won't implement them off the project spec alone.
 ```

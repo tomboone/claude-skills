@@ -20,13 +20,13 @@ gh pr view PR_NUMBER --json baseRefName --jq .baseRefName
 
 Call that `BASE`.
 
-## Step 2 — Check the review verdict (headless-safe, never prompt)
+## Step 2 — Check the review verdict (never prompt)
 
 Run `gh pr view PR_NUMBER --comments` and look for the most recent `## Code Review` comment posted by `/reviewit`.
 
 - If one exists and its **Assessment is "Needs changes"**, do **not** prompt — stop and emit `STATUS: MERGE_BLOCKED` as the very last line, noting the unaddressed findings.
 - If one exists and its **Assessment is "Ready to merge"**, proceed.
-- If there is **no** `## Code Review` comment, proceed. The loop no longer runs `/reviewit` — `/implementit` performs its `/code-review` pass before the PR is opened, so a loop-driven PR legitimately has no review comment and CI is the gate. (Run `/reviewit {TICKET_ID}` by hand first if you want a recorded verdict on this PR.)
+- If there is **no** `## Code Review` comment, proceed. The pipeline does not run `/reviewit` — `/implementit` performs its `/code-review` pass before the PR is opened, so a PR shipped by `/doit` legitimately has no review comment and CI is the gate. (Run `/reviewit {TICKET_ID}` by hand first if you want a recorded verdict on this PR.)
 
 ## Step 3 — Wait for CI (bounded)
 
@@ -67,7 +67,7 @@ If 10 minutes pass with still no check registered, **stop and emit `STATUS: MERG
 gh pr checks PR_NUMBER --watch --fail-fast --interval 10
 ```
 
-Bound it at 30 minutes. Prefer `timeout 1800 gh pr checks …` when `timeout` (or `gtimeout`) is on `PATH` — it's GNU coreutils and is **not** present on a stock macOS, so check with `command -v timeout` first and run the command bare if it's missing. Under the loop this is belt-and-braces anyway: `loop.py` caps the whole `mergeit` step at 1200s and will kill it first.
+Bound it at 30 minutes. Prefer `timeout 1800 gh pr checks …` when `timeout` (or `gtimeout`) is on `PATH` — it's GNU coreutils and is **not** present on a stock macOS, so check with `command -v timeout` first and run the command bare if it's missing.
 
 Interpret the exit code:
 
@@ -111,8 +111,12 @@ Check out `BASE` locally and pull to sync — **not** `main` unconditionally; a 
 
 Delete the per-ticket review context bundle for `{TICKET_ID}` (path per `plugins/personal/review-context-convention.md`) if it exists — it is no longer needed once the PR is merged.
 
-Do not touch the Linear ticket's status; the GitHub↔Linear connector closes it automatically on merge.
+Do not touch the Linear ticket's status. The GitHub↔Linear connector moves it to **Merged** on merge, and **Done** is the user's to set once the manual steps in Step 6 are finished. Never move it yourself, not even when there are no manual steps.
 
 ## Step 6 — Report done
 
-Show the merge commit hash, which strategy was used and why (`squash` into `release/*`, `merge` into `DEFAULT`), and confirm the branch and context bundle are cleaned up (one line). Then, as the **very last line of your response**, emit `STATUS: MERGED`.
+Show the merge commit hash, which strategy was used and why (`squash` into `release/*`, `merge` into `DEFAULT`), and confirm the branch and context bundle are cleaned up (one line).
+
+Then give the **manual-steps walkthrough** defined in `plugins/personal/manual-steps-convention.md`: a `### Manual steps to close {TICKET_ID}` section listing everything that must still happen outside this merge for the ticket to be finished, with exact commands (local or deployed) or click-by-click UI steps. Always include the section — saying `No other steps — <why>` when nothing else is left — and always end it with the user's last step, moving the ticket to Done. Re-read the ticket and spec for this, and use the PR diff (`gh pr diff PR_NUMBER`); don't rely on memory of what the ticket was about. (**Exception — running under `/doit`:** skip it here; `/doit`'s Step 4 gives the walkthrough once for the whole run.)
+
+Then, as the **very last line of your response**, emit `STATUS: MERGED`.

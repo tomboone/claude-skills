@@ -38,9 +38,9 @@ Push the current branch to origin if it isn't already up to date.
 
 ## Step 5 — Identify the base branch
 
-Resolve the PR base, `BASE`, **without blocking on a question when a sane default exists** — this command runs headlessly under the loop orchestrator, so a prompt to the user hangs the run and produces no PR:
+Resolve the PR base, `BASE`, **without blocking on a question when a sane default exists** — under `/doit` this runs mid-pipeline, where a question stalls the run instead of producing a PR:
 
-1. If invoked with `--base <branch>` (the loop threads this), that's `BASE`. Skip the rest.
+1. If invoked with `--base <branch>` (`/doit` threads this), that's `BASE`. Skip the rest.
 2. Otherwise if the repo `CLAUDE.md` or `.claude/CLAUDE.md` contains a `loop_base: <branch>` line, that's `BASE`.
 3. Otherwise look for unmerged release branches matching `release/*`. First resolve `<default>` (the
    repo default branch): `git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'`
@@ -90,4 +90,4 @@ Use `gh pr create` with:
 
 Show the PR URL. (**Exception — running under `/doit`:** continue straight into its merge phase in this same session; its Overrides replace this hand-off.) Otherwise tell the user to clear context and run `/mergeit {TICKET_ID}` when ready — or `/reviewit {TICKET_ID}` first if this PR warrants a second opinion beyond the `/code-review` pass `/implementit` already ran. Stop here — do not wait for CI, do not merge.
 
-Then, as the **very last line of your response**, emit `STATUS: SHIPPED`. (The headless loop orchestrator keys on the PR URL; this sentinel keeps the status contract uniform across commands.)
+Then, as the **very last line of your response**, emit `STATUS: SHIPPED`. (`/doit` keys on the PR URL; this sentinel keeps the status contract uniform across commands.)

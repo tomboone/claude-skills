@@ -1,6 +1,6 @@
 # claude-skills
 
-This repo holds personal Claude Code plugins — slash commands, scripts, and skills used to run a Linear-ticket-driven development pipeline (plan → implement → ship → review → merge), plus two ways to chain that pipeline: `/doit` (attended — one ticket, one session) and a headless orchestrator (`loop.py`) that drives it unattended across a wave.
+This repo holds personal Claude Code plugins — slash commands, scripts, and skills used to run a Linear-ticket-driven development pipeline (plan → implement → ship → review → merge), plus `/doit`, which chains that pipeline for one ticket in one attended session.
 
 ## Language
 
@@ -17,7 +17,7 @@ A private, self-directed code review that runs inside `/implement`, before a PR 
 _Avoid_: code review (ambiguous with post-ship review)
 
 **Post-ship review**:
-The public, durable review gate that runs against an open PR (`/code-review`, invoked by `/reviewit`). Produces a `## Code Review` PR comment and a `STATUS` sentinel. Read-only — findings get pushed back on or fixed by `/addressit`, never auto-applied. **Manual only:** `loop.py` no longer runs it (see `docs/adr/0005-the-loop-drops-post-ship-review.md`), and `/mergeit` honors its verdict when one exists but does not require one.
+The public, durable review gate that runs against an open PR (`/code-review`, invoked by `/reviewit`). Produces a `## Code Review` PR comment and a `STATUS` sentinel. Read-only — findings get pushed back on or fixed by `/addressit`, never auto-applied. **Manual only:** no pipeline command runs it (see `docs/adr/0005-the-loop-drops-post-ship-review.md`), and `/mergeit` honors its verdict when one exists but does not require one.
 _Avoid_: code review (ambiguous with pre-ship review)
 
 **Review context bundle**:
@@ -28,8 +28,13 @@ A single written spec covering an entire project, produced by `/projectit` Phase
 _Avoid_: project spec, spec (ambiguous with per-ticket spec)
 
 **Attended pipeline run**:
-One ticket driven `implementit → shipit → mergeit` inline in a single interactive session, by `/doit`. Contrasts with the loop, which drives the same state machine unattended across a wave with each step in its own `claude -p` process. The distinction that matters is **warm context vs. cold starts**, not autonomy alone — the phases of an attended run reuse state (branch, base, spec, diff) the earlier phases resolved. See `docs/adr/0007-doit-is-the-attended-single-ticket-pipeline.md`.
-_Avoid_: loop (reserve for `loop.py`)
+One ticket driven `implementit → shipit → mergeit` inline in a single interactive session, by `/doit`. Contrasts with the retired `loop.py`, which drove the same state machine unattended with each step in its own `claude -p` process. The phases of an attended run reuse state (branch, base, spec, diff) the earlier phases resolved. See `docs/adr/0007-doit-is-the-attended-single-ticket-pipeline.md` and `docs/adr/0008-retire-the-headless-loop.md`.
+_Avoid_: loop (the retired headless orchestrator)
 
-**Loop-ready**:
-A Linear label `/projectit` applies to a work ticket at creation (alongside `repo:<name>`), meaning `loop.py` may pick it up directly once its `blockedBy` blockers are `Done` — with no `/planit` pass required first. Deselectable per-ticket at the Phase-3 gate for anything that should be planned or reviewed by hand first. It gates *unattended* pickup only: `/doit` deliberately ignores it, since a human named the ticket.
+**Manual-steps walkthrough**:
+The closing section of a `/mergeit`, `/doit`, or no-code `/implementit` report. It lists everything that must still happen outside the merged code for the ticket to be finished — deploys, migrations, secrets, external-service setup, executing a delivered runbook — each with exact commands (local or deployed) or click-by-click UI steps, plus a check that it worked. It always appears, and always ends with the user moving the ticket to **Done** by hand — merging only takes it to **Merged** (see `docs/adr/0010-done-means-the-manual-steps-are-finished.md`). For a **no-code ticket** (one needing no repository change, signalled by `STATUS: NO_CODE`), it *is* the implementation. See `plugins/personal/manual-steps-convention.md`.
+_Avoid_: follow-ups, next steps (too vague — the point is that they're exact)
+
+**Planit label**:
+A Linear label `/projectit` applies to a work ticket at creation when its Phase-3 coverage check finds the project-wide spec doesn't cover that ticket to `/planit`'s sufficiency standard. While it's on, `/implementit` (and so `/doit`) won't fall back to the project-wide spec and stops with `NO_PLAN`; `/planit` removes it once it has judged the ticket implementation-ready or written its per-ticket spec. It flags coverage gaps visible at project-shaping time only — not later drift from how a blocker actually shipped. See `docs/adr/0009-projectit-flags-spec-gaps-for-planit.md`.
+_Avoid_: needs-planning, loop-ready (retired)
