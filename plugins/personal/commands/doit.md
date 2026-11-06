@@ -48,8 +48,8 @@ through if `/doit` was invoked with it.
 
 **Outcomes.**
 - Emitted `STATUS: NO_CODE` → the ticket needs no repository change. Skip phases 2 and 3 (there is
-  nothing to ship or merge) and go straight to Step 4, where the manual-steps walkthrough is the
-  whole deliverable.
+  nothing to ship or merge) and go straight to Step 4. There, the manual steps are the whole
+  deliverable.
 - Emitted `STATUS: NO_PLAN` → stop the whole run. Report which sources were checked, tell the user to
   run `/planit {TICKET_ID}`, and emit `STATUS: NO_PLAN` as your very last line.
 - Did not reach `STATUS: IMPLEMENTED` for any other reason (error, ambiguity, stopped early) → stop.
@@ -91,7 +91,8 @@ Invoke `mergeit` via the Skill tool for `{TICKET_ID}`.
   blocks; a missing `## Code Review` comment does not.
 - Its CI handling (Steps 3a–3c) applies **in full, unchanged**. Do not shorten the waits and do not
   merge past an unregistered or failing check. CI is the merge gate.
-- Its Step 6 manual-steps walkthrough is deferred to this command's Step 4, so it appears once.
+- Its Step 6 close-out (manual-steps list, comment, "now or later") is deferred to this command's
+  Step 4, so it happens once.
 
 **Outcomes.**
 - `STATUS: MERGE_BLOCKED` → stop. Report the blocking reason (failed check + log URL, no check
@@ -108,38 +109,51 @@ Print one compact block — no phase-by-phase retelling, the user watched it hap
 Branch:  <branch name>  (base: <base>)            # omit for a no-code ticket
 PR:      <PR URL>  (<merged | open>)              # "none — no-code ticket" when NO_CODE
 Merge:   <commit sha>, <squash|merge> into <base>   # omit when not merged
-Next:    finish the manual steps below, then /clear and /doit <next ticket>
+Next:    the manual steps below, then /clear and /doit <next ticket>
 ```
 
 If the pre-ship review left any judgement-call smells unfixed (ADR 0006), list them here in one
 line each — this is the one place the user sees them, since the PR is already merged.
 
-**Then give the manual-steps walkthrough** defined in `plugins/personal/manual-steps-convention.md`
-whenever the run ended **merged**, **PR open (`--no-merge`)**, or **no-code**. This is mandatory, not
-a courtesy: it is how the user learns what still stands between this run and a finished ticket,
-without having to ask. Build it from the ticket, the spec and the diff already in context. Don't
-re-fetch what earlier phases read.
+**Then close the run** as `plugins/personal/manual-steps-convention.md` → "Closing a run" defines,
+whenever the run ended **merged**, **PR open (`--no-merge`)**, or **no-code**. This is mandatory,
+not a courtesy. It is how the user learns what still stands between this run and a finished
+ticket, without having to ask. In short: find the steps, post them to the ticket as a checklist
+comment, show a one-line-per-step outline, and ask whether to work through them now. Build the
+list from the ticket, the spec and the diff already in context. Don't re-fetch what earlier phases
+read.
 - **Merged:** everything the merged code does not do by itself — deploy (if merging doesn't deploy),
   migrations, config and secrets, external-service setup, executing any runbook or script the ticket
-  delivered.
+  delivered, one step per runbook step.
 - **`--no-merge`:** getting the PR reviewed and merged comes first (PR URL, then `/mergeit {TICKET_ID}`),
-  then everything that will remain after it merges.
-- **No-code:** the ticket's entire implementation, written so it can be followed start to finish —
-  every command exact, every UI step click by click, each with its own check that it worked.
+  then everything that will remain after it merges. Don't ask "now or later". Point at
+  `/finishit {TICKET_ID}` for after the merge.
+- **No-code:** the ticket's entire implementation, as steps that can be followed start to finish.
 
-Write `No other steps — <why>` only when the evidence shows nothing else is left. Either way the walkthrough ends with the user moving the ticket to Done; the merge only takes it to **Merged**. Skip the walkthrough for runs that
-stopped as `BLOCKED`, `NO_PLAN`, `MERGE_BLOCKED` or `FAILED`; their report already says what to
-do next.
+On **now**, invoke `finishit` via the Skill tool. It runs inline in this context, like the three
+phases did.
+
+**Overrides for `finishit`.**
+- Its Step 0 is already answered: the step list and the comment's ID are in context. Don't
+  re-fetch the ticket, its comments, or the diff.
+- Its `STATUS:` sentinel (`FINISHED` / `PAUSED`) ends the response in place of the run-level one
+  below. The report block above already records whether the run merged.
+
+Say `No other steps — <why>` only when the evidence shows nothing else is left. In that case
+there is no comment and no question. Either way the closing section ends with the user moving the
+ticket to Done, since the merge only takes it to **Merged**. Skip all of this for runs that stopped
+as `BLOCKED`, `NO_PLAN`, `MERGE_BLOCKED` or `FAILED`. Their report already says what to do next.
 
 Do not touch the Linear ticket's status. The GitHub↔Linear connector moves it as far as **Merged**, and **Done** is the user's to set once the manual steps are finished (the walkthrough's last step tells them to).
 
-Then, as the **very last line of your response**, emit exactly one run-level sentinel:
+Unless `finishit` took over, emit exactly one run-level sentinel as the **very last line of your
+response**:
 
 | Situation | Sentinel |
 |---|---|
 | Merged | `STATUS: MERGED` |
 | PR open, `--no-merge` was passed | `STATUS: READY_FOR_REVIEW` |
-| No repository change needed; walkthrough given | `STATUS: NO_CODE` |
+| No repository change needed; steps recorded | `STATUS: NO_CODE` |
 | Merge blocked (CI, or "Needs changes") | `STATUS: MERGE_BLOCKED` |
 | No design context found | `STATUS: NO_PLAN` |
 | Unmet blocker, or ticket not found | `STATUS: BLOCKED` |

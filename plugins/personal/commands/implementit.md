@@ -55,10 +55,13 @@ step is a no-op. Backwards-compatible.
 change to this repository at all**, the ticket is entirely manual work: configuring something in an
 external console, running an existing runbook or script, a one-off data fix. In that case don't
 create a branch and don't implement anything. Say in one line why there is nothing to commit, then
-give the manual-steps walkthrough defined in `plugins/personal/manual-steps-convention.md`. That
-walkthrough *is* the ticket's implementation, so it must be complete and exact. (**Exception —
-running under `/doit`:** skip the walkthrough here; `/doit` gives it in its Step 4.) Then, as the
-**very last line of your response**, emit `STATUS: NO_CODE`. If the ticket needs *any* repository
+**close the run** as `plugins/personal/manual-steps-convention.md` → "Closing a run" defines: post
+the steps to the ticket as a checklist comment, show a one-line-per-step outline, and ask whether to
+work through them now. Those steps *are* the ticket's implementation, so the list must be complete
+and every step exact. If the user picks **now**, invoke `finishit` via the Skill tool. It runs
+inline, with its Step 0 already answered, and its `STATUS:` sentinel (`FINISHED` / `PAUSED`) ends
+the response. (**Exception — running under `/doit`:** skip all of this here. `/doit` closes the run
+in its Step 4.) Otherwise, as the **very last line of your response**, emit `STATUS: NO_CODE`. If the ticket needs *any* repository
 change — including writing a runbook or script that someone then executes — this exception doesn't
 apply. Implement the repository part as normal; the execution becomes a manual step after merge.
 
