@@ -14,7 +14,7 @@ claude-skills/
 ├── .claude-plugin/marketplace.json         # marketplace manifest ("personal-skills")
 ├── claude-global.md                        # canonical global CLAUDE.md (see below)
 ├── plugins/personal/
-│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.22.0)
+│   ├── .claude-plugin/plugin.json          # plugin manifest ("personal", v0.22.1)
 │   ├── commands/                           # pipeline commands (projectit, planit, …, mergeit, doit, finishit)
 │   │                                       # + wrappers for the Pocock skills the pipeline calls
 │   ├── spec-and-plan-convention.md         # where specs & plans live on disk

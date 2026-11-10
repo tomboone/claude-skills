@@ -104,14 +104,28 @@ Execute in this order:
    ticket's spec or plan already identified — writing the failing test first wherever the repo's
    conventions call for it. This is not a blanket instruction to test-drive every line of a ticket,
    and it does not override a repo whose `CLAUDE.md` prescribes something else.
-2. **Typecheck and test as you go**: typechecking regularly, individual test files regularly, and
-   the full suite once at the end. Use the commands the repo's `CLAUDE.md` prescribes (many
+2. **Typecheck and test as you go, narrowly**: typecheck regularly, and run the test files the
+   change touches. Do **not** run the full suite by hand when the repo's pre-commit hook runs it:
+   step 4's commit runs it once, and a hook failure is fixed and recommitted. Only when the hook
+   is narrower than CI, or absent, run the full suite by hand, once, just before step 4, and say
+   that the hook is narrower. Never start a test run while another is running. The rules are
+   `claude-global.md` → *Running tests*. Use the commands the repo's `CLAUDE.md` prescribes (many
    projects wrap these — don't invoke the underlying tool directly when a task runner is
    documented).
 3. **Review and fix**: invoke the `code-review` skill over the work and act on its findings. It
    reports along two axes — **Standards** (does the code follow this repo's documented coding
    standards?) and **Spec** (does the code match what the originating ticket asked for?) — in
    parallel sub-agents. It reports; it does not fix.
+
+   **Review the uncommitted working tree; do not commit first.** Give both sub-agents the change
+   as `git diff <BASE>` plus the untracked files `git status --short` lists. Committing before the
+   review and again after its fixes runs the hook's full suite twice per ticket. Committing once,
+   in step 4, runs it once.
+
+   **Test cost is a Standards finding.** Add to the Standards sub-agent's brief: flag every new or
+   changed test that rebuilds expensive state (a pipeline step, a migrated database, a large file)
+   per test when it only reads that state, or that re-reads fixture files inside a loop. Since the
+   hook runs the suite on every commit, this is a hard finding, not a smell: fix it in this ticket.
 
    **Sub-agent model routing.** Run the **Standards** sub-agent on **Haiku**: it is checklist
    matching against documented rules and a fixed smell list — rubric work, not open-ended
@@ -120,7 +134,10 @@ Execute in this order:
    require. This matters most here, where the session is typically on Opus and this pass is
    the pipeline's only code review (`docs/adr/0005-the-loop-drops-post-ship-review.md`) — without the
    routing, the Standards axis is Opus-priced for checklist work.
-4. **Commit** to the current branch.
+4. **Commit** to the current branch, once, after the review's fixes. The pre-commit hook runs the
+   suite here. If it fails, fix the cause and commit again; never `--no-verify`. Then read the
+   slowest-tests list the hook prints, where the repo has one (`--durations`), and fix any new
+   test near its top before going on.
 
 Apply the findings **scoped by severity**:
 

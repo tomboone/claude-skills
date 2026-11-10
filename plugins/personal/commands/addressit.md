@@ -43,7 +43,7 @@ If there is no `## Code Review` comment at all, there is nothing to address — 
 For each finding in the most recent `## Code Review` comment, using the context bundle (Linear intent + spec/plan) and the live diff as ground truth:
 
 - **Verify before implementing.** Check each finding against codebase reality and the ticket's intent.
-- **Implement valid fixes** one at a time; test each as you go.
+- **Implement valid fixes** one at a time; run the test files each touches as you go. Not the full suite by hand where the pre-commit hook runs it: the commit after the fixes does, once (`claude-global.md` → *Running tests*).
 - **Push back — and hold ground — on findings that are wrong, unnecessary, out of scope for the ticket, or conflict with the spec/plan.** Do NOT implement a change just to satisfy the reviewer; record technical reasoning instead. No performative agreement, no gratitude — see the skill.
 
 Track each finding's disposition: **Fixed** (what changed) or **Pushed back** (the reasoning).
