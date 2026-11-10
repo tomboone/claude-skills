@@ -176,4 +176,8 @@ The reason this command exists is that three phases in one warm context cost les
   and carried forward, per the Overrides above.
 - **Don't re-summarize** the implementation for the ship phase; the diff and the plan are already in
   context, so `shipit`'s commit message and PR body come straight from what you know.
+- **Run the full suite once per ticket, through the pre-commit hook.** Run targeted test files while
+  implementing, review the uncommitted tree, and commit once. Never a manual full run where the hook
+  runs it, and never two test runs at once (`implementit` step 2, `claude-global.md` → *Running
+  tests*, ADR 0012).
 - Keep phase transitions to one line. The final report in Step 4 is the only summary.

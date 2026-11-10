@@ -5,6 +5,31 @@
 - **Linear ticket statuses**: The GitHub↔Linear connector automatically moves tickets through their statuses based on branch and PR activity — In Progress, In Review, and on merge to **Merged**, not Done. **Done is set by the user, by hand**, once the ticket's manual steps (deploys, migrations, running a delivered runbook) are finished; a merged PR is not a finished ticket. Never flip a ticket's status yourself or offer to — not even to Done after the manual steps are complete. Moving it to Done is the user's last step in the manual-steps walkthrough.
 - **Project Context**: Always run the `localdev:load-project-context` skill at the start of a conversation.
 
+## Running tests
+
+A full test-suite run is minutes of waiting, and a CI failure costs far more. The pre-commit hook
+exists to catch everything CI would, once per commit.
+
+- **The hook is the gate.** Where a repo's pre-commit hook runs the full suite (read
+  `.pre-commit-config.yaml`), never run the full suite by hand. Commit, and let the hook run it
+  once. A hook failure is the signal: fix it, then commit again.
+- **While iterating, run only what the change touches**: the test file or files, or one test
+  (`-k`), through the repo's task runner. Typecheck as often as useful.
+- **Where the hook is narrower than CI**, or there is no hook, run the full suite by hand exactly
+  once, just before the commit. Say so, rather than leaving it to CI. Never push something CI might
+  fail on.
+- **One test process at a time.** Never start a test run while another is running, whether yours,
+  a background one or a hook's. Integration suites usually share one database and bucket, and
+  concurrent runs fail each other. After stopping a background run, confirm its process inside
+  the container is gone too, since stopping the host side may not stop it.
+- **Ask before any manual full run.** If you think one is warranted anyway, for example commits
+  made under a weaker hook, say why and ask first.
+- **Write tests that are cheap to run.** Don't rebuild expensive state (a pipeline step, a
+  migrated database, a large file) in every test when the tests only read it: share it through a
+  module- or session-scoped fixture, and cache fixture-file readers. After a commit that adds
+  tests, read the slowest-tests list the hook prints (`--durations`). A new test near its top is a
+  defect to fix before shipping.
+
 ## Python Coding Style
 
 - **Type hints**: Use modern `X | None` and `X | Y` syntax (not `Optional[X]` / `Union[X, Y]`).
