@@ -30,6 +30,13 @@ Fetch `{TICKET_ID}` via the Linear MCP. Then:
    `Done`/completed state, stop — do **not** start implementing. Name each unfinished blocker (ID,
    title, current status) and emit `STATUS: BLOCKED` as the very last line.
 
+   **If the user tells you to proceed past the blocker anyway**, continue, but run as if
+   `--no-merge` was passed, whether or not it was. A PR built ahead of its blocker must not land
+   before the blocker does, so the merge stays with the user. Name the bypassed blocker in the
+   one-liner below (`merging: off — blocker <ID> bypassed`). Everything downstream then follows the
+   `--no-merge` path: Step 2 skips phase 3, Step 4 closes the run as `--no-merge`, and the sentinel
+   is `STATUS: READY_FOR_REVIEW`.
+
 Say in one line what you're about to do (ticket ID, title, and whether merging is in scope), then go
 straight into phase 1 — no confirmation gate.
 
@@ -164,7 +171,7 @@ response**:
 | Flag | Effect |
 |---|---|
 | `--base <branch>` | Force the branch/PR base. Threaded to both `/implementit` and `/shipit`. Without it, phase 1 resolves the base itself (`loop_base:` hint → current integration branch → repo default). |
-| `--no-merge` | Stop after the PR is opened. Use it on repos where PRs need team approval. |
+| `--no-merge` | Stop after the PR is opened. Use it on repos where PRs need team approval. Implied when you tell `/doit` to proceed past an unfinished blocker (Step 0). |
 
 ## Token discipline
 
